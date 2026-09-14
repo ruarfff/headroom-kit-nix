@@ -1,0 +1,71 @@
+---
+name: install-headroom-kit
+description: Set up or migrate Headroom Kit in a Nix flake or Home Manager configuration. Use when a user wants Headroom wrappers for Codex, the macOS Codex app, Copilot CLI, or an isolated VS Code profile while preserving normal agent settings.
+---
+
+# Install Headroom Kit
+
+Configure the consumer repository, then build the selected launchers. Keep normal
+agent configuration and authentication under their existing owner.
+
+## Locate the consumer
+
+1. Read its `AGENTS.md`, flake inputs, and relevant package or Home Manager module.
+   Identify the target system and existing wrapper declarations. Preserve unrelated
+   work, input pins, module ownership, and `home.stateVersion`.
+2. Check that Nix flakes and the requested agents are available. Kit supplies Python
+   and uv, but does not install agents, editors, or extensions. Check the requested
+   system against the package outputs and `docs/validation.md`. Linux runtime
+   support is unvalidated; the Codex app launcher is macOS only.
+3. Use the README and `docs/configuration.md` from
+   the requested Kit revision. Preserve an existing pin or user-specified revision;
+   otherwise use that README's tagged GitHub input and retain the resulting lock.
+   Use a `path:` input only when the user selects a local checkout.
+   If this skill was installed alone, obtain the docs from that exact GitHub
+   revision or Nix input source before applying examples. The source repository is
+   https://github.com/ruarfff/headroom-kit-nix; do not assume its default branch
+   matches the consumer pin.
+
+## Make the change
+
+1. Add the Kit input and either import `homeManagerModules.default` or select
+   packages. Use the consumer's existing method to pass `inputs` to its module.
+   Use `environment.systemPackages` for NixOS/nix-darwin package selection or
+   `home.packages` for Home Manager. Follow the existing layout and host selection.
+   The default Home Manager selection includes `headroom` and both CLI wrappers.
+2. Select only requested wrappers. Use `lib.mkHeadroomKit` when the consumer needs
+   custom packages without Home Manager. Start with the pinned Headroom default;
+   use `latest` only when the user requests it.
+3. Check executable names and port conflicts. Codex and Copilot must use different
+   ports. Give Copilot CLI and the editor different ports for concurrent use.
+   Match the editor channel to the user's installation; Stable is the default,
+   and Insiders is an explicit choice.
+   An editor user-data directory must be dedicated to Kit. Keep Settings Sync off;
+   do not reuse a normal profile or link its settings into the isolated directory.
+4. Remove obsolete package declarations only within the authorized migration.
+   Do not change permanent agent endpoint settings silently. Follow the migration
+   section in `docs/usage.md` if the user asks to remove old overrides.
+   Preserve sign-in, history, preferences, and unrelated shell settings.
+5. Keep package-index credentials out of source and the Nix store. Kit uses user
+   and system uv policy without reading project configuration. Do not inspect
+   credential files to prove this; use the local-index regression instead.
+
+## Build and hand off
+
+1. Run the consumer's formatter and affected configuration build. For a standalone
+   Kit checkout, run `nix flake check "path:$PWD"` and
+   `nix build "path:$PWD#headroom-kit"`. A `path:` source includes untracked files
+   without staging them. Do not update unrelated lock inputs.
+2. Resolve build failures before activation. Install or activate only within the
+   user's authorization and the consumer's normal workflow. Do not commit or push
+   unless requested.
+3. Explain authentication without reading or copying credentials: Codex keeps its
+   existing sign-in; Copilot additionally needs `headroom copilot-auth login` and
+   `copilot-headroom --model <model-id>`. Let the user complete interactive sign-in.
+4. For requested runtime checks, use the isolated smoke test in
+   `docs/development.md`. It uses no accounts or live GUI apps.
+   Authenticated model requests and live GUI changes require explicit authorization.
+   Health alone does not prove routed traffic or useful compression.
+5. Report changed files, actual checks, remaining limitations, and the next required
+   user action. Setup is complete when the requested packages build and the user
+   has clear launch and rollback instructions. Do not claim untested routes work.

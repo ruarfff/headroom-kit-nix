@@ -1,0 +1,4 @@
+interface:
+  display_name: "Install Headroom Kit"
+  short_description: "Set up Headroom wrappers in a Nix configuration"
+  default_prompt: "Use $install-headroom-kit to add Headroom launchers to my Nix configuration."
