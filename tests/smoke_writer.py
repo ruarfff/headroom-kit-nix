@@ -1,12 +1,11 @@
 """Run with the resolved Headroom 0.37.0 Python; no accounts or GUI processes."""
 
-import contextlib
 import importlib
 import importlib.metadata
 import sys
 import tempfile
 import unittest
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "libexec/launch.py"
@@ -36,18 +35,17 @@ class PinnedWriterTests(unittest.TestCase):
                     else:
                         settings.write_bytes(original)
 
-                @contextlib.contextmanager
                 def proxy(
                     cfg: kit.Config,
                     version: str,
                     kind: str,
                     port: int,
                     auth: kit.CopilotAuth | None,
-                ) -> Iterator[None]:
+                ) -> str:
                     if layout == "late-settings-link":
                         settings.unlink()
                         settings.symlink_to(normal)
-                    yield None
+                    return f"http://127.0.0.1:{port}"
 
                 cfg = {
                     "vscodeChannel": "stable",
@@ -55,11 +53,12 @@ class PinnedWriterTests(unittest.TestCase):
                     "vscodeUserDataDir": str(data),
                     "vscodeExtensionsDir": str(root / "extensions"),
                     "vscodePort": 18787,
+                    "startupTimeout": 2,
                 }
                 launches = []
 
                 def authorize() -> kit.CopilotAuth:
-                    return kit.CopilotAuth("https://api.githubcopilot.com", "test-only", None, None)
+                    return kit.CopilotAuth("https://api.githubcopilot.com", "test-only-oauth")
 
                 def launch(argv: Sequence[str], env: Mapping[str, str] | None) -> int:
                     launches.append(list(argv))

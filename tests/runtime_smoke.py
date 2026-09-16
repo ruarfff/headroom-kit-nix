@@ -10,6 +10,74 @@ import tempfile
 from pathlib import Path
 
 
+def stop_shared(package: Path, env: dict[str, str], port: int) -> None:
+    result = subprocess.run(
+        [str(package / "bin/headroom-kit"), "stop", str(port)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    with socket.socket() as listener:
+        assert listener.connect_ex(("127.0.0.1", port)) != 0
+
+
+def smoke_api_clients(package: Path, env: dict[str, str], agent: Path, root: Path) -> None:
+    for name in ("pi", "opencode"):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            client_port = listener.getsockname()[1]
+        child_env = dict(env, SMOKE_PORT=str(client_port))
+        child_env[f"HEADROOM_{name.upper()}_EXECUTABLE"] = str(agent)
+        child_env[f"HEADROOM_{name.upper()}_PORT"] = str(client_port)
+        result = subprocess.run(
+            [str(package / f"bin/{name}-headroom")],
+            env=child_env,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["version"] == "0.37.0" and payload["ready"] is True
+        assert payload["upstream"] is None
+        assert ("--extension" if name == "pi" else "--standalone") in payload["args"]
+        with socket.socket() as listener:
+            assert listener.connect_ex(("127.0.0.1", client_port)) == 0
+        stop_shared(package, child_env, client_port)
+        print(
+            f"Real {name} proxy readiness, launch options, independent lifetime, explicit stop: PASS"
+        )
+
+
+def smoke_adapters(env: dict[str, str], root: Path) -> None:
+    uvx = shutil.which("uvx")
+    if uvx is None:
+        raise RuntimeError("uvx is required; run this smoke test inside nix develop")
+    for script in ("smoke_writer.py", "smoke_auth.py"):
+        subprocess.run(
+            [
+                uvx,
+                "--isolated",
+                "--no-env-file",
+                "--no-python-downloads",
+                "--python",
+                sys.executable,
+                "--from",
+                "headroom-ai[proxy]==0.37.0",
+                "python",
+                "-I",
+                str(Path(__file__).with_name(script).resolve()),
+            ],
+            env=env,
+            cwd=root,
+            check=True,
+            timeout=300,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("package", type=Path, help="Built headroom-kit store path")
@@ -24,8 +92,11 @@ def main() -> int:
         agent.write_text(
             f"#!{sys.executable}\n"
             "import json, os, sys, urllib.request\n"
+            "if sys.argv[1:] == ['--version']:\n"
+            "    print('opencode v2.0.3')\n"
+            "    sys.exit(0)\n"
             "opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))\n"
-            "with opener.open('http://127.0.0.1:' + os.environ['HEADROOM_CODEX_PORT'] + '/health') as response:\n"
+            "with opener.open('http://127.0.0.1:' + os.environ['SMOKE_PORT'] + '/health') as response:\n"
             "    health = json.load(response)\n"
             "print(json.dumps({'args': sys.argv[1:], 'version': health['version'], 'ready': health['ready'],\n"
             "                  'upstream': health['config']['openai_api_url']}))\n"
@@ -46,6 +117,7 @@ def main() -> int:
             "UV_CACHE_DIR": str(args.cache_dir or root / "uv-cache"),
             "HEADROOM_CODEX_EXECUTABLE": str(agent),
             "HEADROOM_CODEX_PORT": str(port),
+            "SMOKE_PORT": str(port),
             "HEADROOM_VERSION": "0.37.0",
         }
         # Deliberately omit the user's environment, token files, and live ports.
@@ -83,32 +155,22 @@ def main() -> int:
         ]
         assert config.read_text() == original
         with socket.socket() as listener:
-            assert listener.connect_ex(("127.0.0.1", port)) != 0
-        print(
-            "Real Codex proxy readiness, routing arguments, clean JSON, configuration preservation, cleanup: PASS"
-        )
-        uvx = shutil.which("uvx")
-        if uvx is None:
-            parser.error("uvx is required; run this smoke test inside nix develop")
-        subprocess.run(
-            [
-                uvx,
-                "--isolated",
-                "--no-env-file",
-                "--no-python-downloads",
-                "--python",
-                sys.executable,
-                "--from",
-                "headroom-ai[proxy]==0.37.0",
-                "python",
-                "-I",
-                str(Path(__file__).with_name("smoke_writer.py").resolve()),
-            ],
+            assert listener.connect_ex(("127.0.0.1", port)) == 0
+        again = subprocess.run(
+            [str(args.package / "bin/codex-headroom"), "exec", "stub"],
             env=env,
             cwd=root,
-            check=True,
-            timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=240,
         )
+        assert again.returncode == 0 and "Reusing" in again.stderr, again.stderr
+        stop_shared(args.package, env, port)
+        print(
+            "Real Codex proxy readiness, routing arguments, clean JSON, configuration preservation, reuse, explicit stop: PASS"
+        )
+        smoke_api_clients(args.package, env, agent, root)
+        smoke_adapters(env, root)
         # Home/state is discarded; cache reuse is explicit and contains no auth.
         assert not (root / ".headroom/copilot-auth.json").exists()
     return 0

@@ -29,6 +29,7 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               python313
+              nodejs
               uv
               curl
               ruff
@@ -53,6 +54,7 @@
               {
                 nativeBuildInputs = [
                   pkgs.python313
+                  pkgs.nodejs
                   pkgs.uv
                   pkgs.curl
                   pkgs.ruff
@@ -73,6 +75,7 @@
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME"
                 python -m unittest discover -s tests -v
+                node --test tests/test_client_adapters.mjs
                 ruff check libexec tests .github/scripts
                 ruff format --check libexec tests .github/scripts
                 nixfmt --check flake.nix nix/*.nix

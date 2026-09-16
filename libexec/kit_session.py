@@ -1,16 +1,24 @@
 """Route each client for one launch without changing its normal configuration."""
 
 import contextlib
+import json
 import os
 import plistlib
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 
-from kit_proxy import CopilotAuth, copilot_auth, locked, proxy
+from kit_proxy import (
+    CopilotAuth,
+    copilot_auth,
+    ensure_proxy,
+    locked,
+    management,
+    owner_main,
+    serve_main,
+)
 from kit_runtime import (
     Config,
     KitError,
@@ -19,7 +27,6 @@ from kit_runtime import (
     privacy,
     resolve,
     run_agent,
-    say,
     validate,
 )
 
@@ -33,7 +40,7 @@ class Desktop:
 
 type Proxy = Callable[
     [Config, str, str, int, CopilotAuth | None],
-    AbstractContextManager[subprocess.Popen[bytes] | None],
+    str,
 ]
 type Agent = Callable[[Sequence[str], Mapping[str, str] | None], int]
 
@@ -128,32 +135,47 @@ def configure_editor(data: Path, port: int) -> None:
         ) from None
 
 
+def check_codex_options(args: list[str]) -> None:
+    options = args[: args.index("--")] if "--" in args else args
+    for index, arg in enumerate(options):
+        if arg in ("--oss", "--local-provider"):
+            raise KitError("codex-headroom supports only the built-in OpenAI provider.")
+        setting = (
+            args[index + 1]
+            if arg in ("-c", "--config") and index + 1 < len(args)
+            else arg.removeprefix("--config=")
+            if arg.startswith("--config=")
+            else arg[2:]
+            if arg.startswith("-c") and arg != "-c"
+            else ""
+        )
+        key = setting.split("=", 1)[0].strip()
+        if key in ("model_provider", "openai_base_url") or key.startswith("model_providers."):
+            raise KitError(
+                "Provider and endpoint overrides conflict with codex-headroom routing. "
+                "Use the normal codex command for custom providers."
+            )
+
+
 def preflight(
     cfg: Config, command: str, args: list[str], desktop: Desktop = Desktop()
 ) -> str | list[str] | None:
     if command == "codex-headroom":
-        options = args[: args.index("--")] if "--" in args else args
-        for index, arg in enumerate(options):
-            if arg in ("--oss", "--local-provider"):
-                raise KitError("codex-headroom supports only the built-in OpenAI provider.")
-            setting = (
-                args[index + 1]
-                if arg in ("-c", "--config") and index + 1 < len(args)
-                else arg.removeprefix("--config=")
-                if arg.startswith("--config=")
-                else arg[2:]
-                if arg.startswith("-c") and arg != "-c"
-                else ""
-            )
-            key = setting.split("=", 1)[0].strip()
-            if key in ("model_provider", "openai_base_url") or key.startswith("model_providers."):
-                raise KitError(
-                    "Provider and endpoint overrides conflict with codex-headroom routing. "
-                    "Use the normal codex command for custom providers."
-                )
+        check_codex_options(args)
         agent = executable(cfg["codexExecutable"], "HEADROOM_CODEX_EXECUTABLE")
     elif command == "copilot-headroom":
         agent = executable(cfg["copilotExecutable"], "HEADROOM_COPILOT_EXECUTABLE")
+    elif command == "pi-headroom":
+        agent = executable(cfg["piExecutable"], "HEADROOM_PI_EXECUTABLE")
+    elif command == "opencode-headroom":
+        agent = executable(cfg["opencodeExecutable"], "HEADROOM_OPENCODE_EXECUTABLE")
+        opencode_arguments(args)
+        opencode_config(os.environ.get("OPENCODE_CONFIG_CONTENT", "{}"), cfg["opencodePort"])
+        result = subprocess.run([agent, "--version"], capture_output=True, text=True, timeout=10)
+        if result.returncode or not result.stdout.strip().removeprefix("opencode v").startswith(
+            "2."
+        ):
+            raise KitError("opencode-headroom requires OpenCode v2 (tested with 2.0.3).")
     elif command == "codex-app-headroom":
         if args:
             raise KitError("Use codex-app-headroom without arguments, or --help.")
@@ -172,14 +194,6 @@ def preflight(
     else:
         agent = None
     return agent
-
-
-def wait_gui(process: subprocess.Popen[bytes] | None) -> int:
-    if process is None:
-        return 0
-    say("Keep this terminal open. Close the wrapped app before Ctrl+C stops its proxy.")
-    process.wait()
-    raise KitError("Headroom stopped. Close the wrapped app and restart the wrapper.")
 
 
 def codex_arguments(args: list[str], endpoint: str) -> list[str]:
@@ -234,6 +248,49 @@ def client_environment(env: Mapping[str, str]) -> dict[str, str]:
     return child
 
 
+def with_options(args: list[str], options: list[str]) -> list[str]:
+    end = args.index("--") if "--" in args else len(args)
+    return [*args[:end], *options, *args[end:]]
+
+
+def opencode_arguments(args: list[str]) -> list[str]:
+    options = args[: args.index("--")] if "--" in args else args
+    if any(
+        arg.split("=", 1)[0] in ("--server", "--standalone", "--no-standalone") for arg in options
+    ):
+        raise KitError("opencode-headroom manages its own private server. Omit server flags.")
+    remaining = iter(options)
+    for arg in remaining:
+        if arg in ("--log-level", "--prompt", "--session", "-s", "--completions"):
+            next(remaining, None)
+        elif not arg.startswith("-"):
+            if arg not in ("run", "mini") and not arg.startswith((".", "/", "~")):
+                raise KitError(
+                    "Use opencode-headroom [./directory], run, or mini. Use normal opencode for other commands."
+                )
+            break
+    return with_options(args, ["--standalone"])
+
+
+def opencode_config(content: str, port: int) -> str:
+    try:
+        config = json.loads(content)
+        if not isinstance(config, dict) or not isinstance(config.get("plugins", []), list):
+            raise ValueError
+    except ValueError:
+        raise KitError(
+            "OPENCODE_CONFIG_CONTENT must be a JSON object with a plugins array if present. Use a JSONC file for comments."
+        ) from None
+    config["plugins"] = [
+        *config.get("plugins", []),
+        {
+            "package": str(Path(__file__).with_name("opencode-plugin")),
+            "options": {"endpoint": f"http://127.0.0.1:{port}/v1"},
+        },
+    ]
+    return json.dumps(config)
+
+
 def session(
     cfg: Config,
     command: str,
@@ -242,63 +299,70 @@ def session(
     *,
     desktop: Desktop = Desktop(),
     authorize: Callable[[], CopilotAuth] = copilot_auth,
-    start_proxy: Proxy = proxy,
+    start_proxy: Proxy = ensure_proxy,
     launch: Agent = run_agent,
 ) -> int:
     agent = preflight(cfg, command, args, desktop)
     os.umask(0o077)
-    if command.startswith("codex"):
-        port = cfg["codexPort"]
-        with start_proxy(cfg, version, "codex", port, None) as process:
-            endpoint = f"http://127.0.0.1:{port}/v1"
-            if command == "codex-headroom":
-                return launch(
-                    [agent, *codex_arguments(args, endpoint)], client_environment(os.environ)
-                )
-            # Recheck after a possibly slow download/start to avoid attaching to
-            # an app that was opened during startup.
-            target = app_target(cfg, desktop)
-            result = launch(
-                [
-                    desktop.open,
-                    "--env",
-                    f"CODEX_APP_SERVER_OPENAI_BASE_URL={endpoint}",
-                    "--env",
-                    "CODEX_APP_SERVER_FORCE_CLI=1",
-                    *target,
-                ],
-                None,
+    if command in ("pi-headroom", "opencode-headroom"):
+        kind = command.removesuffix("-headroom")
+        port = cfg[f"{kind}Port"]
+        endpoint = start_proxy(cfg, version, kind, port, None)
+        env = client_environment(os.environ)
+        if kind == "pi":
+            env["HEADROOM_KIT_ENDPOINT"] = endpoint + "/v1"
+            args = with_options(
+                args, ["--extension", str(Path(__file__).with_name("pi-extension.mjs"))]
             )
-            return result or wait_gui(process)
+        else:
+            env["OPENCODE_CONFIG_CONTENT"] = opencode_config(
+                env.get("OPENCODE_CONFIG_CONTENT", "{}"), port
+            )
+            args = opencode_arguments(args)
+        return launch([agent, *args], env)
+    if command.startswith("codex"):
+        endpoint = start_proxy(cfg, version, "codex", cfg["codexPort"], None) + "/v1"
+        if command == "codex-headroom":
+            return launch([agent, *codex_arguments(args, endpoint)], client_environment(os.environ))
+        target = app_target(cfg, desktop)
+        return launch(
+            [
+                desktop.open,
+                "--env",
+                f"CODEX_APP_SERVER_OPENAI_BASE_URL={endpoint}",
+                "--env",
+                "CODEX_APP_SERVER_FORCE_CLI=1",
+                *target,
+            ],
+            None,
+        )
     port = cfg["copilotPort"] if command == "copilot-headroom" else cfg["vscodePort"]
     auth = authorize()
+    endpoint = start_proxy(cfg, version, "copilot", port, auth)
     if command == "copilot-headroom":
-        with start_proxy(cfg, version, "copilot", port, auth):
-            env = client_environment(os.environ)
-            env.pop("COPILOT_PROVIDER_API_KEY", None)
-            env.update(
-                COPILOT_PROVIDER_TYPE="openai",
-                COPILOT_PROVIDER_BASE_URL=f"http://127.0.0.1:{port}/v1",
-                COPILOT_PROVIDER_WIRE_API="responses",
-                COPILOT_PROVIDER_BEARER_TOKEN=auth.token,
-                GITHUB_COPILOT_USE_TOKEN_EXCHANGE="false",
-                GITHUB_COPILOT_API_URL=auth.api_url,
-                OPENAI_TARGET_API_URL=auth.api_url,
-            )
-            return launch([agent, *args], env)
+        env = client_environment(os.environ)
+        env.pop("COPILOT_PROVIDER_API_KEY", None)
+        env.update(
+            COPILOT_PROVIDER_TYPE="openai",
+            COPILOT_PROVIDER_BASE_URL=endpoint + "/v1",
+            COPILOT_PROVIDER_WIRE_API="responses",
+            COPILOT_PROVIDER_BEARER_TOKEN="headroom-kit",
+            GITHUB_COPILOT_USE_TOKEN_EXCHANGE="false",
+            GITHUB_COPILOT_API_URL=auth.api_url,
+            OPENAI_TARGET_API_URL=auth.api_url,
+        )
+        return launch([agent, *args], env)
     data, extensions = editor_paths(cfg)
-    with (
-        locked(
-            data / ".headroom-launcher.lock",
-            "The Headroom editor wrapper is already running. Use its window.",
-        ),
-        start_proxy(cfg, version, "copilot", port, auth) as process,
+    with locked(
+        data / ".headroom-launcher.lock",
+        "Timed out waiting for editor startup.",
+        cfg["startupTimeout"],
     ):
         configure_editor(data, port)
         env = client_environment(os.environ)
         for key in ("VSCODE_IPC_HOOK_CLI", "VSCODE_PORTABLE"):
             env.pop(key, None)
-        result = launch(
+        return launch(
             [
                 agent,
                 "--user-data-dir",
@@ -312,11 +376,16 @@ def session(
             ],
             env,
         )
-        return result or wait_gui(process)
 
 
 def main() -> int:
+    if sys.argv[1] == "__owner":
+        return owner_main()
+    if sys.argv[1] == "__serve":
+        return serve_main()
     defaults, command, *args = sys.argv[1:]
+    if command == "headroom-kit":
+        return management(args)
     cfg = configuration(defaults)
     if command == "__session":
         version, command, *args = args
@@ -328,16 +397,27 @@ def main() -> int:
     ):
         print(f"Usage: {command}" + (" [path]" if command == "copilot-vscode-headroom" else ""))
         print(
-            "Launch with a local Headroom proxy. Keep the owner terminal open; Ctrl+C stops its proxy."
+            "Launch with a shared local Headroom proxy. Use headroom-kit status/stop to manage it."
         )
         print(
             "Normal Codex and VS Code launches keep their existing settings. Configure through HEADROOM_*."
         )
         return 0
     options = args[: args.index("--")] if "--" in args else args
-    if command in ("codex-headroom", "copilot-headroom") and any(
-        arg in ("--help", "-h", "--version", "-V") for arg in options
+    if command in (
+        "codex-headroom",
+        "copilot-headroom",
+        "pi-headroom",
+        "opencode-headroom",
+    ) and any(
+        arg in ("--help", "-h", "--version", "-V")
+        or (arg == "-v" and command in ("pi-headroom", "opencode-headroom"))
+        for arg in options
     ):
+        if command == "opencode-headroom":
+            return run_agent(
+                [executable(cfg["opencodeExecutable"], "HEADROOM_OPENCODE_EXECUTABLE"), *args]
+            )
         return run_agent([preflight(cfg, command, args), *args])
     validate(cfg)
     preflight(cfg, command, args)

@@ -6,7 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
-Normal launches keep their settings. Kit installs no agents or background services.
+Normal launches keep their settings. Kit installs no agents or system services.
 
 ```mermaid
 flowchart LR
@@ -18,15 +18,15 @@ flowchart LR
 You need **Nix with flakes** and an installed, signed-in coding agent.
 Runtime checks cover Apple Silicon macOS; [Linux runtime is unverified](docs/validation.md).
 
-Run the `v0.1.0` release:
+Run the `v0.1.1` release:
 
 ```sh
-nix run github:ruarfff/headroom-kit-nix/v0.1.0#codex-headroom
+nix run github:ruarfff/headroom-kit-nix/v0.1.1#codex-headroom
 ```
 
 The first launch downloads Headroom 0.37.0 using your uv package-index settings.
 See [versions and indexes](docs/configuration.md#versions-and-package-indexes) to
-change them. Keep the terminal open while using Kit. For Copilot, follow the
+change them. For Copilot, follow the
 [authorization steps](docs/usage.md#copilot-cli).
 
 ## Install in your Nix configuration
@@ -34,7 +34,7 @@ change them. Keep the terminal open while using Kit. For Copilot, follow the
 Pin the release in your flake:
 
 ```nix
-inputs.headroom-kit.url = "github:ruarfff/headroom-kit-nix/v0.1.0";
+inputs.headroom-kit.url = "github:ruarfff/headroom-kit-nix/v0.1.1";
 ```
 
 In a Home Manager module that receives `inputs`:
@@ -47,8 +47,9 @@ In a Home Manager module that receives `inputs`:
 }
 ```
 
-Build and activate through your usual workflow. This installs `headroom` and both
-CLI wrappers. See [configuration](docs/configuration.md#nix-integration) to add
+Build and activate through your usual workflow. This installs `headroom`,
+`headroom-kit`, `codex-headroom`, and `copilot-headroom`.
+See [configuration](docs/configuration.md#nix-integration) to add Pi, OpenCode, or
 GUI wrappers, use NixOS/nix-darwin without Home Manager, or pass module arguments.
 
 ## Choose a command
@@ -59,16 +60,20 @@ After installation, run these from your project:
 | --- | --- |
 | `codex-headroom` | Use your existing Codex sign-in |
 | `copilot-headroom --model <model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first |
+| `pi-headroom --provider openai --model <model-id>` | [Configure Pi](docs/usage.md#pi) with an OpenAI or Anthropic API key |
+| `opencode-headroom` | [Configure OpenCode v2](docs/usage.md#opencode-v2) with an OpenAI or Anthropic API key |
 | `copilot-vscode-headroom .` | [Authorize Copilot](docs/usage.md#copilot-in-vs-code); opens an isolated VS Code Stable profile |
 | `codex-app-headroom` | Quit the macOS Codex app first; [experimental routing](docs/usage.md#codex-macos-app) |
 | `headroom` | Run the Headroom CLI directly |
+| `headroom-kit status` / `headroom-kit stop <port>` | Inspect or stop shared proxies |
 
-CLI exit stops its owned proxy. Close wrapped GUI apps before stopping their
-terminal. See [usage](docs/usage.md) for Insiders, shared proxies, and troubleshooting.
+Compatible sessions share a proxy that survives client and
+terminal exit. Explicit stop interrupts every attached client. See
+[usage and migration](docs/usage.md#proxy-lifetime) before upgrading from `v0.1.0`.
 
 ## Set up with an agent
 
-Give your agent the [v0.1.0 setup skill](https://github.com/ruarfff/headroom-kit-nix/blob/v0.1.0/skills/install-headroom-kit/SKILL.md).
+Give your agent the [v0.1.1 setup skill](https://github.com/ruarfff/headroom-kit-nix/blob/v0.1.1/skills/install-headroom-kit/SKILL.md).
 
 ## Reference
 

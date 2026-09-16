@@ -1,6 +1,5 @@
 """Adapted source launcher contracts, extended for Kit's shared lifecycle."""
 
-import contextlib
 import importlib
 import json
 import os
@@ -12,7 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "libexec/launch.py"
@@ -39,6 +38,8 @@ class LauncherTests(unittest.TestCase):
             "uvx",
             "codex",
             "copilot",
+            "pi",
+            "opencode",
             "code",
             "code-insiders",
             "agent with spaces",
@@ -57,6 +58,10 @@ class LauncherTests(unittest.TestCase):
             "codexAppPath": None,
             "copilotExecutable": "copilot",
             "copilotPort": free_port(),
+            "piExecutable": "pi",
+            "piPort": free_port(),
+            "opencodeExecutable": "opencode",
+            "opencodePort": free_port(),
             "vscodeChannel": "insiders",
             "vscodeExecutable": None,
             "vscodePort": free_port(),
@@ -81,6 +86,13 @@ class LauncherTests(unittest.TestCase):
         self.config.parent.mkdir()
         self.original = b'model = "existing-model"\n# Keep all existing preferences\n'
         self.config.write_bytes(self.original)
+        self.addCleanup(self.stop_proxies)
+
+    def stop_proxies(self) -> None:
+        for key in ("codexPort", "copilotPort", "vscodePort", "piPort", "opencodePort"):
+            state = kit_proxy.control(self.cfg[key])
+            if state:
+                kit_proxy.control(self.cfg[key], "stop", state["instance"])
 
     def events(self) -> list[dict[str, kit_proxy.Json]]:
         path = self.root / "events"
@@ -162,7 +174,7 @@ class LauncherTests(unittest.TestCase):
                 f'openai_base_url="http://127.0.0.1:{self.cfg["codexPort"]}/v1"',
             ],
         )
-        self.assertEqual(self.events()[-1]["event"], "proxy-stop")
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
 
     def test_codex_config_overrides_share_the_subcommand_scope(self) -> None:
         args = [
@@ -191,10 +203,83 @@ class LauncherTests(unittest.TestCase):
             f'"http://127.0.0.1:{self.cfg["codexPort"]}/v1"',
         )
 
-    def test_agent_failure_status_and_cleanup(self) -> None:
+    def test_agent_failure_status_preserves_shared_proxy(self) -> None:
         result = self.run_launcher(mode="agent-failure")
         self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertEqual(self.events()[-1]["event"], "proxy-stop")
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
+
+    def test_pi_launch_preserves_arguments_config_and_shared_proxy(self) -> None:
+        config = self.root / ".pi/agent/models.json"
+        config.parent.mkdir(parents=True)
+        config.write_bytes(b'{"providers": {}}\n')
+        args = ["--provider", "openai", "--no-extensions", "--", "literal --help"]
+        result = self.run_launcher(*args, command="pi-headroom", mode="agent-failure")
+        self.assertEqual(result.returncode, 37, result.stderr)
+        event = next(e for e in self.events() if e["event"] == "agent")
+        self.assertEqual(event["args"][:3], args[:3])
+        self.assertEqual(event["args"][-2:], args[-2:])
+        self.assertEqual(event["args"][3], "--extension")
+        self.assertTrue(Path(event["args"][4]).is_file())
+        self.assertEqual(
+            event["env"]["HEADROOM_KIT_ENDPOINT"], f"http://127.0.0.1:{self.cfg['piPort']}/v1"
+        )
+        self.assertEqual(config.read_bytes(), b'{"providers": {}}\n')
+        self.assertEqual(event["cwd"], str(self.root))
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
+
+    def test_opencode_private_server_and_config_overlay(self) -> None:
+        config = self.root / "opencode.jsonc"
+        original = b'// Keep preferences\n{"model":"openai/test-only"}\n'
+        config.write_bytes(original)
+        inherited = {"plugins": ["existing-plugin"], "model": "openai/test-only"}
+        result = self.run_launcher(
+            "run",
+            "--",
+            "literal --server",
+            command="opencode-headroom",
+            env={"OPENCODE_CONFIG_CONTENT": json.dumps(inherited)},
+            mode="agent-failure",
+        )
+        self.assertEqual(result.returncode, 37, result.stderr)
+        event = [e for e in self.events() if e["event"] == "agent"][-1]
+        self.assertEqual(event["args"], ["run", "--standalone", "--", "literal --server"])
+        content = json.loads(event["env"]["OPENCODE_CONFIG_CONTENT"])
+        self.assertEqual(content["model"], inherited["model"])
+        self.assertEqual(content["plugins"][0], "existing-plugin")
+        plugin = content["plugins"][-1]
+        self.assertTrue((Path(plugin["package"]) / "index.js").is_file())
+        self.assertEqual(
+            plugin["options"]["endpoint"], f"http://127.0.0.1:{self.cfg['opencodePort']}/v1"
+        )
+        self.assertEqual(config.read_bytes(), original)
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
+
+    def test_opencode_rejects_shared_servers_and_bad_inline_config(self) -> None:
+        for args in (
+            ["--server", "http://127.0.0.1:1"],
+            ["run", "--standalone=false"],
+            ["service", "start"],
+            ["--log-level", "debug", "service", "start"],
+        ):
+            with self.subTest(args=args):
+                result = self.run_launcher(*args, command="opencode-headroom")
+                self.assertEqual(result.returncode, 1, result.stderr)
+        for content in ("not JSON fake-secret", "[]", '{"plugins": "invalid"}'):
+            result = self.run_launcher(
+                command="opencode-headroom", env={"OPENCODE_CONFIG_CONTENT": content}
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("OPENCODE_CONFIG_CONTENT", result.stderr)
+            self.assertNotIn("fake-secret", result.stderr)
+        self.assertFalse(any(e["event"] in ("resolve", "proxy-start") for e in self.events()))
+
+    def test_opencode_v1_is_rejected_before_runtime_resolution(self) -> None:
+        result = self.run_launcher(
+            command="opencode-headroom", env={"KIT_TEST_OPENCODE_VERSION": "1.2.0"}
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("requires OpenCode v2", result.stderr)
+        self.assertFalse(any(e["event"] in ("resolve", "proxy-start") for e in self.events()))
 
     def test_cleanup_propagates_process_errors_and_restores_handlers(self) -> None:
         class InaccessibleProcess(subprocess.Popen[bytes]):
@@ -214,7 +299,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual({sig: signal.getsignal(sig) for sig in handlers}, handlers)
 
     def test_help_version_no_resolution_or_state(self) -> None:
-        for command in ("codex-headroom", "copilot-headroom"):
+        for command in ("codex-headroom", "copilot-headroom", "pi-headroom", "opencode-headroom"):
             for args in (["--help"], ["--version"], ["exec", "--help"]):
                 result = self.run_launcher(
                     *args, command=command, env={"HEADROOM_VERSION": "invalid"}
@@ -290,7 +375,7 @@ class LauncherTests(unittest.TestCase):
     def test_startup_timeout_is_not_limited_to_port_range(self) -> None:
         result = self.run_launcher(env={"HEADROOM_STARTUP_TIMEOUT": "65536"})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.events()[-1]["event"], "proxy-stop")
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
 
     def test_http_proxy_environment_cannot_intercept_health(self) -> None:
         result = self.run_launcher(
@@ -328,9 +413,16 @@ class LauncherTests(unittest.TestCase):
                 "index.example.invalid,127.0.0.1,internal.example.invalid,localhost,::1",
             ),
         )
-        for command in ("codex-headroom", "copilot-headroom", "copilot-vscode-headroom"):
+        for command in (
+            "codex-headroom",
+            "copilot-headroom",
+            "copilot-vscode-headroom",
+            "pi-headroom",
+            "opencode-headroom",
+        ):
             for exclusions, expected in cases:
                 with self.subTest(command=command, exclusions=exclusions):
+                    self.stop_proxies()
                     inherited = dict(proxy_vars, **exclusions)
                     result = self.run_launcher(command=command, mode="agent-failure", env=inherited)
                     self.assertEqual(result.returncode, 37, result.stderr)
@@ -351,7 +443,13 @@ class LauncherTests(unittest.TestCase):
             "http://127.0.0.1:1",
         )
         inherited.update(NO_PROXY="other.example.invalid", no_proxy="*")
-        for command in ("codex-headroom", "copilot-headroom", "copilot-vscode-headroom"):
+        for command in (
+            "codex-headroom",
+            "copilot-headroom",
+            "copilot-vscode-headroom",
+            "pi-headroom",
+            "opencode-headroom",
+        ):
             with self.subTest(command=command):
                 result = self.run_launcher(command=command, mode="agent-failure", env=inherited)
                 self.assertEqual(result.returncode, 37, result.stderr)
@@ -378,14 +476,19 @@ class LauncherTests(unittest.TestCase):
         child["KEEP_ME"] = "child only"
         self.assertEqual(inherited, original)
 
-    def test_healthy_foreign_proxy_without_kit_metadata_is_refused(self) -> None:
-        owner = self.start()
-        self.wait_for("agent", owner)
-        (self.root / "state/headroom-kit" / f"{self.cfg['codexPort']}.json").unlink()
-        result = self.run_launcher()
+    def test_stale_pid_metadata_cannot_stop_unrelated_process(self) -> None:
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.terminate)
+        metadata = self.root / f"state/headroom-kit/{self.cfg['codexPort']}.json"
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text(json.dumps({"owner": sleeper.pid}))
+        result = self.run_launcher("stop", str(self.cfg["codexPort"]), command="headroom-kit")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("incompatible", result.stderr)
-        self.assertIsNone(owner.poll())
+        self.assertIsNone(sleeper.poll())
+        self.assertEqual(self.run_launcher().returncode, 0)
+        self.stop_proxies()
+        self.assertIsNone(sleeper.poll())
 
     def test_failed_editor_proxy_does_not_open_editor(self) -> None:
         result = self.run_launcher(command="copilot-vscode-headroom", mode="startup-failure")
@@ -446,6 +549,196 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
         self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
 
+    def test_sequential_clients_share_after_first_exit(self) -> None:
+        for command in ("codex-headroom", "copilot-headroom", "pi-headroom", "opencode-headroom"):
+            with self.subTest(command=command):
+                before = len([e for e in self.events() if e["event"] == "proxy-start"])
+                for _ in range(2):
+                    result = self.run_launcher(command=command, mode="traffic")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    len([e for e in self.events() if e["event"] == "proxy-start"]), before + 1
+                )
+                replies = [e for e in self.events() if e["event"] == "client-response"][-2:]
+                self.assertEqual(len({e["instance"] for e in replies}), 1)
+                self.assertEqual([e["count"] for e in replies], [1, 2])
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
+
+    def test_simultaneous_clients_wait_and_share(self) -> None:
+        clients = [self.start(mode="wait-traffic") for _ in range(3)]
+        for client in clients:
+            self.wait_for("agent", client, count=3)
+        self.wait_for("client-response", clients[0], count=6)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+        replies = [e for e in self.events() if e["event"] == "client-response"]
+        self.assertEqual(len({e["instance"] for e in replies}), 1)
+
+    def test_first_client_exit_signal_or_kill_preserves_other_traffic(self) -> None:
+        for sig in (None, signal.SIGINT, signal.SIGKILL):
+            with self.subTest(signal=sig):
+                exit_file = self.root / "finish-first-client"
+                first = self.start(mode="wait-traffic", env={"KIT_TEST_EXIT_FILE": str(exit_file)})
+                self.wait_for("client-response", first)
+                second = self.start(mode="wait-traffic", env={"KIT_TEST_CLIENT": "survivor"})
+                self.wait_for("agent", second, count=2)
+                if sig is None:
+                    exit_file.touch()
+                else:
+                    os.killpg(first.pid, sig)
+                first.communicate(timeout=12)
+                before = len([e for e in self.events() if e["event"] == "client-response"])
+                self.wait_for("client-response", second, count=before + 3)
+                result = self.run_launcher(mode="traffic")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+                second.terminate()
+                second.communicate(timeout=12)
+                self.stop_proxies()
+                (self.root / "events").unlink()
+                exit_file.unlink(missing_ok=True)
+
+    def test_stop_selects_instance_and_next_launch_starts_cleanly(self) -> None:
+        for command in ("codex-headroom", "pi-headroom"):
+            self.assertEqual(self.run_launcher(command=command, mode="traffic").returncode, 0)
+        state = kit_proxy.control(self.cfg["codexPort"])
+        self.assertFalse(
+            kit_proxy.control(self.cfg["codexPort"], "stop", "wrong-instance")["stopped"]
+        )
+        result = self.run_launcher("stop", str(self.cfg["codexPort"]), command="headroom-kit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(kit_proxy.port_free(self.cfg["codexPort"]))
+        self.assertTrue(kit_proxy.control(self.cfg["piPort"])["ready"])
+        self.assertEqual(self.run_launcher(mode="traffic").returncode, 0)
+        self.assertNotEqual(kit_proxy.control(self.cfg["codexPort"])["instance"], state["instance"])
+
+    def test_account_separation_and_rotating_access_token(self) -> None:
+        for token in ("fake-first-access", "fake-rotated-access"):
+            result = self.run_launcher(
+                command="copilot-headroom", mode="traffic", env={"KIT_TEST_ACCESS_TOKEN": token}
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+        result = self.run_launcher(
+            command="copilot-headroom", env={"KIT_TEST_ACCOUNT": "fake-other-account"}
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("incompatible", result.stderr)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "agent"]), 2)
+        self.assertNotIn("fake-", json.dumps(kit_proxy.control(self.cfg["copilotPort"])))
+
+    def test_copilot_cli_and_editor_share_only_matching_context(self) -> None:
+        self.assertEqual(self.run_launcher(command="copilot-headroom").returncode, 0)
+        for account, code in (("fake-refresh-account-one", 0), ("fake-other-account", 1)):
+            result = self.run_launcher(
+                command="copilot-vscode-headroom",
+                env={
+                    "HEADROOM_VSCODE_PORT": str(self.cfg["copilotPort"]),
+                    "KIT_TEST_ACCOUNT": account,
+                },
+            )
+            self.assertEqual(result.returncode, code, result.stderr)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "editor"]), 1)
+
+    def test_failed_start_and_dead_proxy_recover(self) -> None:
+        self.assertEqual(self.run_launcher(mode="startup-failure").returncode, 1)
+        self.assertEqual(self.run_launcher(mode="traffic").returncode, 0)
+        proxy = next(e for e in reversed(self.events()) if e["event"] == "proxy-start")
+        os.kill(proxy["pid"], signal.SIGKILL)
+        time.sleep(0.3)
+        self.assertEqual(self.run_launcher(mode="traffic").returncode, 0)
+        replies = [e for e in self.events() if e["event"] == "client-response"]
+        self.assertNotEqual(replies[0]["instance"], replies[1]["instance"])
+
+    def test_stale_socket_recovered_and_environment_change_refused(self) -> None:
+        path = kit_proxy.runtime_dir() / f"{self.cfg['codexPort']}.sock"
+        with socket.socket(socket.AF_UNIX) as stale:
+            stale.bind(str(path))
+        self.assertEqual(self.run_launcher(mode="traffic").returncode, 0)
+        for variable in ("HTTPS_PROXY", "SSL_CERT_FILE", "OPENAI_API_KEY"):
+            result = self.run_launcher(env={variable: "fake-other-context"})
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("incompatible", result.stderr)
+        self.assertEqual(
+            self.run_launcher(mode="traffic", env={"PWD": "/elsewhere", "TERM": "dumb"}).returncode,
+            0,
+        )
+
+    def test_status_and_stop_work_during_startup_without_resolution(self) -> None:
+        first = self.start(mode="not-ready", env={"HEADROOM_STARTUP_TIMEOUT": "10"})
+        self.wait_for("proxy-start", first)
+        state = kit_proxy.control(self.cfg["codexPort"])
+        self.assertFalse(state["ready"])
+        result = self.run_launcher(
+            "status", command="headroom-kit", env={"HEADROOM_VERSION": "invalid"}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready=False", result.stdout)
+        result = self.run_launcher("stop", str(self.cfg["codexPort"]), command="headroom-kit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        first.communicate(timeout=12)
+        self.assertNotEqual(first.returncode, 0)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "resolve"]), 1)
+        self.assertFalse(any(e["event"] == "agent" for e in self.events()))
+
+    def test_killed_creator_during_startup_leaves_one_shared_proxy(self) -> None:
+        first = self.start(mode="wait-traffic", env={"KIT_TEST_DELAY": "0.8"})
+        self.wait_for("proxy-start", first)
+        os.killpg(first.pid, signal.SIGKILL)
+        first.communicate(timeout=12)
+        result = self.run_launcher(mode="traffic")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "client-response"]), 1)
+
+    def test_simultaneous_editor_windows_share_transaction_lock(self) -> None:
+        clients = [self.start(command="copilot-vscode-headroom", mode="") for _ in range(3)]
+        for client in clients:
+            _, error = client.communicate(timeout=12)
+            self.assertEqual(client.returncode, 0, error)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "editor"]), 3)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+        self.assertEqual(self.config.read_bytes(), self.original)
+
+    def test_healthy_foreign_listener_is_neither_reused_nor_stopped(self) -> None:
+        port = self.cfg["codexPort"]
+        foreign = subprocess.Popen(
+            [
+                str(self.root / "runtime python"),
+                "-I",
+                "-m",
+                "headroom.cli",
+                "proxy",
+                "--port",
+                str(port),
+            ],
+            env=self.env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.addCleanup(foreign.wait)
+        self.addCleanup(foreign.terminate)
+        deadline = time.monotonic() + 3
+        while not kit_proxy.compatible(kit_proxy.health(port), "0.37.0", None):
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.05)
+        self.assertEqual(self.run_launcher().returncode, 1)
+        self.assertEqual(self.run_launcher("stop", str(port), command="headroom-kit").returncode, 1)
+        self.assertIsNone(foreign.poll())
+        self.assertTrue(kit_proxy.health(port)["ready"])
+        self.assertFalse(any(e["event"] == "agent" for e in self.events()))
+
+    def test_plain_client_keeps_normal_route(self) -> None:
+        self.assertEqual(self.run_launcher(mode="traffic").returncode, 0)
+        before = len([e for e in self.events() if e["event"] == "proxy-request"])
+        result = subprocess.run(
+            [str(self.bin / "codex")], env=self.env, capture_output=True, text=True, check=True
+        )
+        self.assertEqual(result.stdout, "AGENT_OUTPUT\n")
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-request"]), before)
+        event = self.events()[-1]
+        self.assertEqual(event["args"], [])
+
     def test_explicit_and_latest_version_mismatch_refuse_reuse(self) -> None:
         owner = self.start()
         self.wait_for("agent", owner)
@@ -457,14 +750,14 @@ class LauncherTests(unittest.TestCase):
             self.assertIn("incompatible", result.stderr)
         self.assertIsNone(owner.poll())
 
-    def test_interrupt_cleans_owned_proxy(self) -> None:
+    def test_interrupt_preserves_shared_proxy(self) -> None:
         process = self.start()
         self.wait_for("agent", process)
         process.send_signal(signal.SIGINT)
         _, stderr = process.communicate(timeout=12)
         self.assertEqual(process.returncode, 130, stderr)
-        self.assertEqual(self.events()[-1]["event"], "proxy-stop")
-        self.assertTrue(kit_proxy.port_free(self.cfg["codexPort"]))
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
+        self.assertFalse(kit_proxy.port_free(self.cfg["codexPort"]))
 
     def test_reused_proxy_survives_interrupt(self) -> None:
         owner = self.start()
@@ -525,7 +818,7 @@ class LauncherTests(unittest.TestCase):
         self.assertNotIn("fake-private", result.stderr)
         self.assertEqual([e["event"] for e in self.events()], ["resolve"])
 
-    def test_editor_isolation_preferences_port_and_cleanup(self) -> None:
+    def test_editor_isolation_preferences_port_and_shared_proxy(self) -> None:
         data = self.root / "isolated editor with spaces"
         settings = data / "User/settings.json"
         settings.parent.mkdir(parents=True)
@@ -542,11 +835,8 @@ class LauncherTests(unittest.TestCase):
             },
         )
         self.wait_for("editor", process)
-        # Allow the CLI launcher to exit and return control to the proxy wait.
-        time.sleep(0.1)
-        process.terminate()
         stdout, stderr = process.communicate(timeout=12)
-        self.assertEqual(process.returncode, 143, stderr)
+        self.assertEqual(process.returncode, 0, stderr)
         self.assertEqual(stdout, "")
         event = next(e for e in self.events() if e["event"] == "editor")
         self.assertEqual(
@@ -566,19 +856,20 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("Existing preferences", settings.read_text())
         self.assertEqual(self.config.read_bytes(), self.original)
         self.assertIn(f"http://127.0.0.1:{self.cfg['vscodePort']}/dashboard", stderr)
-        self.assertEqual(self.events()[-1]["event"], "proxy-stop")
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
 
-    def test_editor_failure_cleans_proxy(self) -> None:
+    def test_editor_failure_preserves_shared_proxy(self) -> None:
         result = self.run_launcher(command="copilot-vscode-headroom", mode="agent-failure")
         self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertEqual(self.events()[-1]["event"], "proxy-stop")
+        self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
 
-    def test_duplicate_editor_wrapper_refused(self) -> None:
+    def test_repeated_editor_wrapper_opens_new_window(self) -> None:
         process = self.start(command="copilot-vscode-headroom", mode="")
         self.wait_for("editor", process)
         result = self.run_launcher(command="copilot-vscode-headroom")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("already running", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "editor"]), 2)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
 
     def test_normal_editor_data_rejected_and_untouched(self) -> None:
         base = (
@@ -654,18 +945,15 @@ class LauncherTests(unittest.TestCase):
         lookup.chmod(0o700)
         return kit.Desktop(platform=platform, lookup=str(lookup), open="/stand-in/open")
 
-    def test_app_launch_overrides_and_failure_cleanup(self) -> None:
+    def test_app_launch_receives_endpoint_without_ownership(self) -> None:
         events = []
         calls = []
 
-        @contextlib.contextmanager
         def proxy(
             cfg: kit.Config, version: str, kind: str, port: int, auth: kit.CopilotAuth | None
-        ) -> Iterator[None]:
-            try:
-                yield None
-            finally:
-                events.append("cleanup")
+        ) -> str:
+            events.append("ready")
+            return f"http://127.0.0.1:{port}"
 
         def launch(argv: Sequence[str], env: Mapping[str, str] | None) -> int:
             calls.append(list(argv))
@@ -697,7 +985,7 @@ class LauncherTests(unittest.TestCase):
                 ]
             ],
         )
-        self.assertEqual(events, ["cleanup"])
+        self.assertEqual(events, ["ready"])
 
     def test_running_app_refused_without_quitting(self) -> None:
         with self.assertRaisesRegex(kit.KitError, "Quit Codex first"):

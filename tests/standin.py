@@ -4,9 +4,11 @@ import json
 import os
 import runpy
 import signal
+import socket
 import sys
 import time
 import types
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import FrameType
@@ -56,6 +58,7 @@ def run_agent(name: str) -> int:
         event,
         args=sys.argv[1:],
         proxy_env={key: os.environ[key] for key in PROXY_VARIABLES if key in os.environ},
+        pid=os.getpid(),
         cwd=os.getcwd(),
         tty=os.isatty(0),
         env={
@@ -65,29 +68,72 @@ def run_agent(name: str) -> int:
                 "COPILOT_PROVIDER_BASE_URL",
                 "COPILOT_PROVIDER_WIRE_API",
                 "COPILOT_MODEL",
+                "HEADROOM_KIT_ENDPOINT",
+                "OPENCODE_CONFIG_CONTENT",
                 "VSCODE_IPC_HOOK_CLI",
                 "VSCODE_PORTABLE",
             )
             if k in os.environ
         },
     )
+    if name == "opencode" and sys.argv[1:] == ["--version"]:
+        print(os.environ.get("KIT_TEST_OPENCODE_VERSION", "opencode v2.0.3"))
+        return 0
     if not is_editor:
         print("AGENT_OUTPUT", flush=True)
     if MODE == "stdin":
         print(sys.stdin.read(), end="")
-    if MODE == "wait":
+    if MODE in ("traffic", "wait-traffic"):
+        client_traffic(name)
+    if MODE in ("wait", "wait-traffic"):
         while True:
-            time.sleep(0.02)
+            if MODE == "wait-traffic":
+                client_traffic(name)
+            if (
+                os.environ.get("KIT_TEST_EXIT_FILE")
+                and Path(os.environ["KIT_TEST_EXIT_FILE"]).exists()
+            ):
+                break
+            time.sleep(0.1)
     return 37 if MODE == "agent-failure" else 0
 
 
+def client_traffic(name: str) -> None:
+    endpoint = os.environ.get("COPILOT_PROVIDER_BASE_URL") or os.environ.get(
+        "HEADROOM_KIT_ENDPOINT"
+    )
+    if name == "codex":
+        endpoint = next(
+            arg.split("=", 1)[1].strip('"')
+            for arg in sys.argv
+            if arg.startswith("openai_base_url=")
+        )
+    elif name == "opencode":
+        endpoint = json.loads(os.environ["OPENCODE_CONFIG_CONTENT"])["plugins"][-1]["options"][
+            "endpoint"
+        ]
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    request = urllib.request.Request(endpoint + "/responses", data=b"{}", method="POST")
+    with opener.open(request, timeout=2) as response:
+        record(
+            "client-response",
+            client=os.environ.get("KIT_TEST_CLIENT", "default"),
+            **json.load(response),
+        )
+
+
 def serve_proxy() -> int:
-    args = sys.argv[sys.argv.index("-m") + 2 :]
+    args = (
+        sys.argv[sys.argv.index("__serve") + 2 :]
+        if "__serve" in sys.argv
+        else sys.argv[sys.argv.index("-m") + 2 :]
+    )
     if args == ["--version"]:
         print("headroom " + os.environ.get("HEADROOM_VERSION", "0.37.0"))
         return 0
     record(
         "proxy-start",
+        pid=os.getpid(),
         args=args,
         proxy_env={key: os.environ[key] for key in PROXY_VARIABLES if key in os.environ},
         cwd=os.getcwd(),
@@ -112,9 +158,32 @@ def serve_proxy() -> int:
     upstream = args[args.index("--openai-api-url") + 1] if "--openai-api-url" in args else None
     if MODE == "wrong-upstream":
         upstream = "https://unrelated.example.invalid"
-    ready_at = time.monotonic() + 0.15
+    ready_at = time.monotonic() + float(os.environ.get("KIT_TEST_DELAY", "0.15"))
+
+    count = 0
 
     class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            nonlocal count
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            count += 1
+            data = json.dumps({"instance": os.getpid(), "count": count}).encode()
+            probe = next(
+                (
+                    value
+                    for value in ("shared-probe-one", "shared-probe-two")
+                    if value.encode() in body
+                ),
+                "auxiliary",
+            )
+            record("proxy-request", instance=os.getpid(), count=count, probe=probe)
+            if MODE == "real-routing":
+                data = b'{"error":{"type":"invalid_request_error","message":"local routing test"}}'
+            self.send_response(400 if MODE == "real-routing" else 200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self) -> None:
             data = json.dumps(
                 {
@@ -132,7 +201,13 @@ def serve_proxy() -> int:
         def log_message(self, format: str, *args: str | int) -> None:
             pass
 
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    if "__serve" in sys.argv:
+        server = HTTPServer(("127.0.0.1", port), Handler, bind_and_activate=False)
+        server.socket.close()
+        server.socket = socket.socket(fileno=int(sys.argv[sys.argv.index("__serve") + 1]))
+        server.server_address = server.socket.getsockname()
+    else:
+        server = HTTPServer(("127.0.0.1", port), Handler)
 
     def stop(signum: int, frame: FrameType | None) -> Never:
         server.server_close()
@@ -155,8 +230,8 @@ def run_session() -> int:
             raise ValueError("fake-private-auth-diagnostic")
         return types.SimpleNamespace(
             api_url="https://api.githubcopilot.com",
-            token="fake-test-token",
-            refresh_oauth_token=None,
+            token=os.environ.get("KIT_TEST_ACCESS_TOKEN", "fake-test-token"),
+            refresh_oauth_token=os.environ.get("KIT_TEST_ACCOUNT", "fake-refresh-account-one"),
             api_token_expires_at=None,
         )
 
@@ -184,9 +259,9 @@ def main() -> int:
     name = Path(sys.argv[0]).name
     if name == "uvx":
         return resolve_runtime()
-    if name in ("codex", "copilot", "agent with spaces", "code", "code-insiders"):
+    if name in ("codex", "copilot", "pi", "opencode", "agent with spaces", "code", "code-insiders"):
         return run_agent(name)
-    if "-m" in sys.argv:
+    if "-m" in sys.argv or "__serve" in sys.argv:
         return serve_proxy()
     return run_session()
 

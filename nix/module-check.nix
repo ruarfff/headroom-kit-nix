@@ -21,9 +21,13 @@ let
     wrappers = [
       "codex-headroom"
       "copilot-vscode-headroom"
+      "pi-headroom"
+      "opencode-headroom"
       "codex-headroom"
     ];
     codex.port = 18788;
+    pi.port = 18790;
+    opencode.port = 18791;
     vscode = {
       channel = "stable";
       port = 18787;
@@ -35,8 +39,11 @@ assert evaluate { enable = false; } == [ ];
 assert
   builtins.map (p: p.name) enabled == [
     "headroom"
+    "headroom-kit"
     "codex-headroom"
     "copilot-vscode-headroom"
+    "pi-headroom"
+    "opencode-headroom"
   ];
 pkgs.symlinkJoin {
   name = "headroom-kit-module-check";

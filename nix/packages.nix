@@ -7,6 +7,10 @@
   codexAppPath ? null,
   copilotExecutable ? "copilot",
   copilotPort ? 8787,
+  piExecutable ? "pi",
+  piPort ? 8790,
+  opencodeExecutable ? "opencode",
+  opencodePort ? 8791,
   vscodeChannel ? "stable",
   vscodeExecutable ? null,
   vscodePort ? 8787,
@@ -26,6 +30,10 @@ let
         codexAppPath
         copilotExecutable
         copilotPort
+        piExecutable
+        piPort
+        opencodeExecutable
+        opencodePort
         vscodeChannel
         vscodeExecutable
         vscodePort
@@ -38,13 +46,17 @@ let
   );
   runtime = pkgs.runCommand "headroom-kit-runtime" { } ''
     mkdir -p "$out/libexec"
-    cp ${../libexec}/*.py "$out/libexec/"
+    cp ${../libexec}/*.py ${../libexec}/*.mjs "$out/libexec/"
+    cp -r ${../libexec}/opencode-plugin "$out/libexec/"
   '';
   commands = [
     "headroom"
+    "headroom-kit"
     "codex-headroom"
     "codex-app-headroom"
     "copilot-headroom"
+    "pi-headroom"
+    "opencode-headroom"
     "copilot-vscode-headroom"
   ];
   packages = lib.genAttrs commands (
@@ -67,7 +79,7 @@ let
     meta.description = "Headroom and launch-only routing for existing coding agents";
     meta.license = lib.licenses.mit;
     meta.homepage = "https://github.com/ruarfff/headroom-kit-nix";
-    meta.mainProgram = "headroom";
+    meta.mainProgram = "headroom-kit";
   };
 in
 assert lib.assertMsg (
@@ -77,10 +89,20 @@ assert lib.assertMsg (builtins.all validPort [
   codexPort
   copilotPort
   vscodePort
+  piPort
+  opencodePort
 ]) "Invalid Headroom port";
 assert lib.assertMsg (
   codexPort != copilotPort && codexPort != vscodePort
 ) "Codex and Copilot require separate ports";
+assert lib.assertMsg (
+  piPort != opencodePort
+  && builtins.all (port: port != piPort && port != opencodePort) [
+    codexPort
+    copilotPort
+    vscodePort
+  ]
+) "Pi and OpenCode require separate ports from other wrappers";
 assert lib.assertMsg (builtins.elem vscodeChannel [
   "stable"
   "insiders"
@@ -90,6 +112,7 @@ assert lib.assertMsg (
 ) "Invalid startup timeout";
 packages
 // {
+  headroom-kit-control = packages.headroom-kit;
   headroom-kit = aggregate;
   default = aggregate;
 }

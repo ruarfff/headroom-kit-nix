@@ -20,6 +20,10 @@ ENV_OPTIONS = {
     "codexAppPath": "HEADROOM_CODEX_APP_PATH",
     "copilotExecutable": "HEADROOM_COPILOT_EXECUTABLE",
     "copilotPort": "HEADROOM_COPILOT_PORT",
+    "piExecutable": "HEADROOM_PI_EXECUTABLE",
+    "piPort": "HEADROOM_PI_PORT",
+    "opencodeExecutable": "HEADROOM_OPENCODE_EXECUTABLE",
+    "opencodePort": "HEADROOM_OPENCODE_PORT",
     "vscodeChannel": "HEADROOM_VSCODE_CHANNEL",
     "vscodeExecutable": "HEADROOM_VSCODE_EXECUTABLE",
     "vscodePort": "HEADROOM_VSCODE_PORT",
@@ -36,6 +40,10 @@ class Config(TypedDict):
     codexAppPath: str | None
     copilotExecutable: str
     copilotPort: int
+    piExecutable: str
+    piPort: int
+    opencodeExecutable: str
+    opencodePort: int
     vscodeChannel: str
     vscodeExecutable: str | None
     vscodePort: int
@@ -96,7 +104,14 @@ def validate(cfg: Config) -> None:
             raise KitError(f"{variable} must not be empty. Unset it to use the default.")
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+|latest", cfg["version"]):
         raise KitError("HEADROOM_VERSION must be an exact stable X.Y.Z release or latest.")
-    for key in ("codexPort", "copilotPort", "vscodePort", "startupTimeout"):
+    validate_numbers(cfg)
+    if cfg["vscodeChannel"] not in ("stable", "insiders"):
+        raise KitError("HEADROOM_VSCODE_CHANNEL must be stable or insiders.")
+
+
+def validate_numbers(cfg: Config) -> None:
+    ports = ("codexPort", "copilotPort", "vscodePort", "piPort", "opencodePort")
+    for key in (*ports, "startupTimeout"):
         try:
             cfg[key] = int(cfg[key])
         except (TypeError, ValueError):
@@ -107,8 +122,9 @@ def validate(cfg: Config) -> None:
         raise KitError("HEADROOM_STARTUP_TIMEOUT must be positive.")
     if cfg["codexPort"] in (cfg["copilotPort"], cfg["vscodePort"]):
         raise KitError("Codex and Copilot must use separate ports.")
-    if cfg["vscodeChannel"] not in ("stable", "insiders"):
-        raise KitError("HEADROOM_VSCODE_CHANNEL must be stable or insiders.")
+    for key in ("piPort", "opencodePort"):
+        if any(cfg[key] == cfg[other] for other in ports if key != other):
+            raise KitError("Pi and OpenCode must use separate ports from other wrappers.")
 
 
 def executable(value: str | None, variable: str) -> str:

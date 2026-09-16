@@ -28,6 +28,10 @@ let
     codexAppPath = cfg.codex.appPath;
     copilotExecutable = cfg.copilot.executable;
     copilotPort = cfg.copilot.port;
+    piExecutable = cfg.pi.executable;
+    piPort = cfg.pi.port;
+    opencodeExecutable = cfg.opencode.executable;
+    opencodePort = cfg.opencode.port;
     vscodeChannel = cfg.vscode.channel;
     vscodeExecutable = cfg.vscode.executable;
     vscodePort = cfg.vscode.port;
@@ -44,6 +48,8 @@ in
           "codex-headroom"
           "codex-app-headroom"
           "copilot-headroom"
+          "pi-headroom"
+          "opencode-headroom"
           "copilot-vscode-headroom"
         ]
       );
@@ -51,7 +57,7 @@ in
         "codex-headroom"
         "copilot-headroom"
       ];
-      description = "Wrappers to install. The headroom command is always included.";
+      description = "Wrappers to install. The headroom and headroom-kit commands are always included.";
     };
     version = mkOption {
       type = types.str;
@@ -77,6 +83,20 @@ in
       };
       port = port 8787;
     };
+    pi = {
+      executable = mkOption {
+        type = types.str;
+        default = "pi";
+      };
+      port = port 8790;
+    };
+    opencode = {
+      executable = mkOption {
+        type = types.str;
+        default = "opencode";
+      };
+      port = port 8791;
+    };
     vscode = {
       channel = mkOption {
         type = types.enum [
@@ -92,6 +112,10 @@ in
     };
   };
   config = lib.mkIf cfg.enable {
-    home.packages = [ packages.headroom ] ++ map (name: packages.${name}) (lib.unique cfg.wrappers);
+    home.packages = [
+      packages.headroom
+      packages.headroom-kit-control
+    ]
+    ++ map (name: packages.${name}) (lib.unique cfg.wrappers);
   };
 }

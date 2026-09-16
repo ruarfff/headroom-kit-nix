@@ -36,6 +36,7 @@ For faster feedback inside the development shell:
 
 ```sh
 python -m unittest discover -s tests -v
+node --test tests/test_client_adapters.mjs
 ruff check libexec tests .github/scripts
 ruff format --check libexec tests .github/scripts
 nixfmt --check flake.nix nix/*.nix
@@ -50,12 +51,36 @@ python tests/runtime_smoke.py "$(readlink result)"
 ```
 
 This downloads Headroom 0.37.0 and checks real proxy readiness, routing arguments,
-output, settings preservation, cleanup, and the real JSONC writer. It uses temporary
-state and a stand-in client, with no account credentials, model requests, or GUI
+output, settings preservation, shared lifetime, explicit stop, and the real JSONC
+writer. It also checks Copilot account pinning and refresh against a local token endpoint. It uses temporary
+state and a stand-in client, with fake credentials, no model requests, and no GUI
 launches. Add `--cache-dir /path/to/test-cache` to reuse a dedicated download cache.
 
 The smoke test is separate from Nix checks: downloaded native wheels must also
 work at runtime. See [validation status](validation.md).
+
+With Pi and OpenCode v2 installed, check their real HTTP clients on macOS:
+
+```sh
+python tests/agent_routing_smoke.py
+```
+
+This uses temporary homes, fake API keys, and local endpoints. A macOS sandbox
+blocks external connections. It checks both providers, conflicting endpoint
+settings, ordinary/wildcard forward proxies, and configuration preservation.
+Local error responses establish routing, not authenticated model support.
+
+With Codex, Pi, and OpenCode installed, check shared concurrent client traffic:
+
+```sh
+python tests/shared_agent_smoke.py
+```
+
+This uses the real launchers and a managed fake proxy with instance IDs and request
+counters. Each pair of real clients sends a distinct prompt. The macOS sandbox
+blocks external connections; responses are local test errors. OpenCode's isolated
+first-use setup runs before the concurrent pair. No authenticated model support
+or compression quality is established.
 
 ## Code and test boundaries
 
@@ -63,8 +88,10 @@ work at runtime. See [validation status](validation.md).
 libexec/
 ├── launch.py        isolated entry point
 ├── kit_runtime.py   version resolution and foreground processes
-├── kit_proxy.py     auth, readiness, reuse, and cleanup
-└── kit_session.py   client routing and editor isolation
+├── kit_proxy.py     shared owner, status/stop, compatibility, and auth
+├── kit_session.py   client routing and editor isolation
+├── pi-extension.mjs temporary Pi endpoint overrides
+└── opencode-plugin/ OpenCode v2 request routing
 ```
 
 Tests use explicit stand-ins and temporary homes. They need loopback access plus

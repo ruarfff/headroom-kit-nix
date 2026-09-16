@@ -1,19 +1,24 @@
-"""Own proxy identity, readiness, subscription auth, and cleanup."""
+"""Own shared proxy startup, compatibility, control, and subscription authentication."""
 
+import argparse
 import contextlib
 import fcntl
 import hashlib
 import json
 import os
+import runpy
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from kit_runtime import Config, Json, KitError, privacy, say, terminate
@@ -22,9 +27,7 @@ from kit_runtime import Config, Json, KitError, privacy, say, terminate
 @dataclass(frozen=True)
 class CopilotAuth:
     api_url: str
-    token: str
     refresh_oauth_token: str | None
-    api_token_expires_at: float | None
 
 
 def health(port: int) -> dict[str, Json]:
@@ -60,13 +63,14 @@ def port_free(port: int) -> bool:
 
 
 @contextlib.contextmanager
-def locked(path: Path, message: str) -> Iterator[None]:
+def locked(path: Path, message: str, timeout: float = 0) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with path.open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise KitError(message) from None
+        deadline = time.monotonic() + timeout
+        while not acquire(lock.fileno()):
+            if time.monotonic() >= deadline:
+                raise KitError(message)
+            time.sleep(0.05)
         yield
 
 
@@ -81,8 +85,12 @@ def proxy_environment(kind: str) -> dict[str, str]:
         and not key.endswith("TARGET_API_URL")
     }
     env = privacy(env, local_stats=kind == "copilot")
-    env.update(HEADROOM_AGENT_TYPE=kind, HEADROOM_STATELESS="1")
-    if kind == "codex":
+    # Headroom's allocator re-exec would discard the inherited-socket/auth adapter.
+    env.update(HEADROOM_AGENT_TYPE=kind, HEADROOM_STATELESS="1", HEADROOM_MALLOC_TUNING="0")
+    if sys.platform == "darwin":
+        env.setdefault("MallocAggressiveMadvise", "1")
+        env.setdefault("MallocLargeCache", "0")
+    if kind != "copilot":
         env.update(
             HEADROOM_OUTPUT_SHAPER="off",
             HEADROOM_EFFORT_ROUTER="off",
@@ -120,27 +128,23 @@ def copilot_auth() -> CopilotAuth:
             or parsed.fragment
         ):
             raise ValueError
-        # Check the complete contract before launching any process.
+        if not resolution.refresh_oauth_token:
+            raise ValueError
+        # Pin the reusable credential, not a rotating access token.
         return CopilotAuth(
             api_url=resolution.api_url,
-            token=resolution.token,
             refresh_oauth_token=resolution.refresh_oauth_token,
-            api_token_expires_at=resolution.api_token_expires_at,
         )
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
         raise KitError(
             "Copilot subscription authorization failed or its endpoint is unsupported. "
             "Run `headroom copilot-auth login`, check your subscription, and retry. "
-            "Only HTTPS *.githubcopilot.com upstreams are supported."
+            "Shared proxies require reusable OAuth and HTTPS *.githubcopilot.com upstreams."
         ) from None
 
 
 def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
     args = [
-        sys.executable,
-        "-I",
-        "-m",
-        "headroom.cli",
         "proxy",
         "--host",
         "127.0.0.1",
@@ -149,7 +153,7 @@ def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
         "--stateless",
         "--no-learn",
     ]
-    if kind == "codex":
+    if kind != "copilot":
         args += [
             "--mode",
             "cache",
@@ -165,103 +169,324 @@ def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
     return args
 
 
-@contextlib.contextmanager
-def proxy(
-    cfg: Config, version: str, kind: str, port: int, auth: CopilotAuth | None = None
-) -> Iterator[subprocess.Popen[bytes] | None]:
-    upstream = auth.api_url if auth else None
-    state = (
-        Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "headroom-kit"
-    )
-    metadata = state / f"{port}.json"
-    signature = hashlib.sha256(
-        b"".join(path.read_bytes() for path in sorted(Path(__file__).parent.glob("*.py")))
-    ).hexdigest()
-    identity = {"version": version, "policy": signature, "kind": kind}
-    process = None
+def runtime_dir() -> Path:
+    # One namespace per OS user and actual port, independent of HOME/XDG/TMPDIR.
+    path = Path("/tmp") / f"headroom-kit-{os.getuid()}"
+    path.mkdir(mode=0o700, exist_ok=True)
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise KitError("The shared Kit runtime directory must be owned by you with mode 0700.")
+    return path
+
+
+def acquire(fd: int) -> bool:
     try:
-        with locked(
-            state / f"{port}.lock",
-            f"Port {port} is being started by another Kit launcher. Retry shortly.",
-        ):
-            if not port_free(port):
-                try:
-                    recorded = json.loads(metadata.read_text())
-                    os.kill(recorded["owner"], 0)
-                except (OSError, ValueError, KeyError, TypeError):
-                    recorded = {}
-                if (
-                    kind == "codex"
-                    and all(recorded.get(k) == v for k, v in identity.items())
-                    and compatible(health(port), version, upstream)
-                ):
-                    say(f"Reusing Headroom {version} on port {port}; keep its owner terminal open.")
-                else:
-                    raise KitError(
-                        f"Port {port} is occupied by an unrelated or incompatible proxy. "
-                        "Stop it in its owner terminal or select another port. "
-                        "Copilot proxies are private to each launch."
-                    )
-            else:
-                env = proxy_environment(kind)
-                if auth:
-                    env.update(
-                        GITHUB_COPILOT_API_TOKEN=auth.token,
-                        GITHUB_COPILOT_API_URL=auth.api_url,
-                    )
-                    if auth.refresh_oauth_token:
-                        env["GITHUB_COPILOT_REFRESH_OAUTH_TOKEN"] = auth.refresh_oauth_token
-                    if auth.api_token_expires_at is not None:
-                        env["GITHUB_COPILOT_API_TOKEN_EXPIRES_AT"] = str(auth.api_token_expires_at)
-                process = subprocess.Popen(
-                    proxy_args(kind, port, upstream),
-                    env=env,
-                    cwd="/",
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except BlockingIOError:
+        return False
+
+
+def control(port: int, action: str = "status", instance: str | None = None) -> dict[str, Json]:
+    path = runtime_dir() / f"{port}.sock"
+    try:
+        info = path.lstat()
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+            raise KitError(f"Unsafe control socket on port {port}.")
+        with socket.socket(socket.AF_UNIX) as client:
+            client.settimeout(12 if action == "stop" else 1)
+            client.connect(str(path))
+            client.sendall(json.dumps({"action": action, "instance": instance}).encode() + b"\n")
+            with client.makefile("rb") as stream:
+                result = json.loads(stream.readline(65536))
+            return result if isinstance(result, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def identity(version: str, kind: str, env: dict[str, str], auth: CopilotAuth | None) -> str:
+    implementation = hashlib.sha256(
+        b"".join(
+            path.read_bytes()
+            for path in sorted(Path(__file__).parent.rglob("*"))
+            if path.suffix in (".py", ".mjs", ".js", ".json")
+        )
+    ).hexdigest()
+    # Hash all supported upstream inputs. Terminal/client variables do not affect sharing.
+    effective = {
+        key: value
+        for key, value in env.items()
+        if (
+            key.lower().endswith("_proxy")
+            or key.endswith(("_API_KEY", "_API_TOKEN", "_TARGET_API_URL"))
+            or key.startswith(
+                (
+                    "HEADROOM_",
+                    "GITHUB_",
+                    "OPENAI_",
+                    "ANTHROPIC_",
+                    "AZURE_",
+                    "AWS_",
+                    "GOOGLE_",
+                    "GEMINI_",
+                    "LITELLM_",
+                    "SSL_",
+                    "Malloc",
                 )
-                await_ready(process, cfg, version, port, upstream)
-                metadata.write_text(json.dumps(dict(identity, owner=os.getpid())))
-        say(f"Dashboard: http://127.0.0.1:{port}/dashboard")
-        yield process
-    finally:
-        if process is not None:
-            cleanup_proxy(process, metadata)
+            )
+            or key
+            in (
+                "HOME",
+                "XDG_CONFIG_HOME",
+                "XDG_DATA_HOME",
+                "XDG_STATE_HOME",
+                "SSL_CERT_FILE",
+                "SSL_CERT_DIR",
+                "REQUESTS_CA_BUNDLE",
+                "CURL_CA_BUNDLE",
+            )
+        )
+    }
+    payload = [
+        version,
+        implementation,
+        sys.executable,
+        kind,
+        effective,
+        [auth.api_url, auth.refresh_oauth_token] if auth else None,
+    ]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def await_ready(
-    process: subprocess.Popen[bytes], cfg: Config, version: str, port: int, upstream: str | None
-) -> None:
+def ensure_proxy(
+    cfg: Config, version: str, kind: str, port: int, auth: CopilotAuth | None = None
+) -> str:
+    env = proxy_environment(kind)
+    if auth and not auth.refresh_oauth_token:
+        raise KitError("Shared Copilot requires reusable OAuth. Run `headroom copilot-auth login`.")
+    fingerprint = identity(version, kind, env, auth)
     deadline = time.monotonic() + cfg["startupTimeout"]
-    while True:
-        if process.poll() is not None:
-            raise KitError(
-                f"Headroom {version} exited before readiness on port {port}. "
-                "Check port availability and runtime compatibility; try HEADROOM_VERSION=0.37.0. "
-                "The agent was not launched."
-            )
-        if compatible(health(port), version, upstream):
-            return
-        if time.monotonic() >= deadline:
-            raise KitError(
-                f"Headroom did not become ready with the expected version and upstream "
-                f"on port {port}. The agent was not launched."
-            )
-        time.sleep(0.1)
+    owner = None
+    lock_path = runtime_dir() / f"{port}.lock"
+    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "a") as lock:
+        while time.monotonic() < deadline:
+            state = control(port)
+            if state:
+                if state.get("identity") != fingerprint:
+                    raise KitError(
+                        f"Port {port} has an incompatible managed proxy. Stop it explicitly or choose another port."
+                    )
+                if state.get("ready"):
+                    say(f"{'Started' if owner else 'Reusing'} Headroom {version} on port {port}.")
+                    say(f"Dashboard: http://127.0.0.1:{port}/dashboard")
+                    return f"http://127.0.0.1:{port}"
+            if owner is not None and owner.poll() is not None:
+                raise KitError(
+                    f"Headroom {version} exited before readiness on port {port}. The agent was not launched."
+                )
+            if owner is None and acquire(lock.fileno()):
+                owner = spawn_owner(cfg, version, kind, port, auth, env, fingerprint, lock.fileno())
+            time.sleep(0.05)
+    raise KitError(
+        f"Headroom did not become ready on port {port} within the startup deadline. The agent was not launched."
+    )
 
 
-def cleanup_proxy(process: subprocess.Popen[bytes], metadata: Path) -> None:
-    # Cleanup cannot be interrupted by a second signal halfway through.
+def spawn_owner(
+    cfg: Config,
+    version: str,
+    kind: str,
+    port: int,
+    auth: CopilotAuth | None,
+    env: dict[str, str],
+    fingerprint: str,
+    lock: int,
+) -> subprocess.Popen[bytes]:
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            listener.bind(("127.0.0.1", port))
+        except OSError:
+            raise KitError(
+                f"Port {port} is occupied by an unrelated or incompatible listener. It was not changed."
+            ) from None
+        listener.listen()
+        if auth:
+            env.update(
+                GITHUB_COPILOT_API_TOKEN="headroom-kit-expired-seed",
+                GITHUB_COPILOT_API_URL=auth.api_url,
+                GITHUB_COPILOT_REFRESH_OAUTH_TOKEN=auth.refresh_oauth_token,
+                GITHUB_COPILOT_API_TOKEN_EXPIRES_AT="0",
+            )
+        child = subprocess.Popen(
+            [sys.executable, "-I", str(Path(__file__).with_name("launch.py")), "__owner"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            cwd="/",
+            start_new_session=True,
+            pass_fds=(lock, listener.fileno()),
+        )
+        payload = dict(
+            version=version,
+            kind=kind,
+            port=port,
+            identity=fingerprint,
+            upstream=auth.api_url if auth else None,
+            timeout=cfg["startupTimeout"],
+            listener=listener.fileno(),
+        )
+        child.stdin.write(json.dumps(payload).encode())
+        child.stdin.close()
+        return child
+
+
+def owner_main() -> int:
+    payload = json.load(sys.stdin)
+    port = payload["port"]
+    path = runtime_dir() / f"{port}.sock"
+    # The inherited lifetime lock proves that any previous socket is abandoned.
+    if path.exists():
+        info = path.lstat()
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+            raise KitError("Unsafe stale control socket.")
+        path.unlink()
+    with socket.socket(socket.AF_UNIX) as server:
+        server.bind(str(path))
+        server.listen()
+        server.settimeout(0.2)
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-I",
+                str(Path(__file__).with_name("launch.py")),
+                "__serve",
+                str(payload["listener"]),
+                *proxy_args(payload["kind"], port, payload["upstream"]),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            pass_fds=(payload["listener"],),
+            start_new_session=True,
+        )
+        os.close(payload["listener"])
+        try:
+            state = {key: payload[key] for key in ("port", "version", "kind", "identity")}
+            state.update(instance=uuid.uuid4().hex, ready=False)
+            serve_control(server, process, state, payload["upstream"], payload["timeout"])
+        finally:
+            cleanup_proxy(process, path)
+    return 0
+
+
+def serve_control(
+    server: socket.socket,
+    process: subprocess.Popen[bytes],
+    state: dict[str, Json],
+    upstream: str | None,
+    timeout: float,
+) -> None:
+    deadline = time.monotonic() + timeout
+    started = False
+    while process.poll() is None:
+        if not started:
+            started = compatible(health(state["port"]), state["version"], upstream)
+            state["ready"] = started
+            if not started and time.monotonic() >= deadline:
+                raise KitError("Shared proxy startup timed out.")
+        try:
+            client, _ = server.accept()
+        except TimeoutError:
+            continue
+        with client:
+            client.settimeout(1)
+            try:
+                with client.makefile("rb") as stream:
+                    request = json.loads(stream.readline(65536))
+                stopping = (
+                    request.get("action") == "stop" and request.get("instance") == state["instance"]
+                )
+                if stopping:
+                    terminate(process, group=True)
+                state["ready"] = not stopping and compatible(
+                    health(state["port"]), state["version"], upstream
+                )
+                client.sendall(json.dumps(dict(state, stopped=stopping)).encode() + b"\n")
+                if stopping:
+                    return
+            except (OSError, ValueError, AttributeError):
+                continue
+
+
+def cleanup_proxy(process: subprocess.Popen[bytes], path: Path) -> None:
     previous = {
         s: signal.signal(s, signal.SIG_IGN) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     }
     try:
         terminate(process, group=True)
-        with contextlib.suppress(ValueError, OSError):
-            if json.loads(metadata.read_text()).get("owner") == os.getpid():
-                metadata.unlink()
+        path.unlink(missing_ok=True)
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+
+
+def managed_copilot_auth() -> None:
+    from headroom import copilot_auth as adapter
+
+    upstream_auth = adapter.apply_copilot_api_auth
+
+    async def authenticate(headers: dict[str, str], *, url: str) -> dict[str, str]:
+        # CLI placeholders and editor tokens both use this proxy's pinned account.
+        if adapter.is_copilot_upstream_url(url):
+            headers = {
+                k: v for k, v in headers.items() if k.lower() not in ("authorization", "x-api-key")
+            }
+        return await upstream_auth(headers, url=url)
+
+    adapter.apply_copilot_api_auth = authenticate
+
+
+def serve_main() -> int:
+    import uvicorn
+
+    if os.environ.get("HEADROOM_AGENT_TYPE") == "copilot":
+        managed_copilot_auth()
+    # Reserve the listening socket before spawning. Health can never certify a
+    # foreign process that wins a check-then-bind race.
+    uvicorn.run = partial(uvicorn.run, fd=int(sys.argv[2]))
+    sys.argv = ["headroom", *sys.argv[3:]]
+    runpy.run_module("headroom.cli", run_name="__main__")
+    return 0
+
+
+def management(args: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="headroom-kit")
+    commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser("status")
+    stop = commands.add_parser("stop", help="Interrupt all clients using the selected proxy")
+    stop.add_argument("port", type=int)
+    options = parser.parse_args(args)
+    if options.action == "status":
+        for path in sorted(runtime_dir().glob("*.sock")):
+            state = control(int(path.stem))
+            if state:
+                print(
+                    f"{state['port']} {state['kind']} Headroom {state['version']} ready={state['ready']} instance={state['instance']}"
+                )
+            else:
+                print(f"{path.stem} unavailable (starting or stale)")
+        return 0
+    if not 1 <= options.port <= 65535:
+        parser.error("port must be between 1 and 65535")
+    state = control(options.port)
+    if not state:
+        raise KitError(
+            f"No responsive managed proxy on port {options.port}; no process was stopped."
+        )
+    result = control(options.port, "stop", state["instance"])
+    if not result.get("stopped"):
+        raise KitError("The managed instance changed or did not confirm shutdown. Retry status.")
+    say(f"Stopped shared proxy on port {options.port}; attached clients are interrupted.")
+    return 0

@@ -19,7 +19,8 @@ or `home-manager.extraSpecialArgs` when Home Manager is a system module.
 
 ### Home Manager
 
-The default module installs `headroom`, `codex-headroom`, and `copilot-headroom`.
+The module installs `headroom`, the `headroom-kit` control command,
+`codex-headroom`, and `copilot-headroom` by default.
 To choose wrappers, set `wrappers` explicitly:
 
 ```nix
@@ -28,18 +29,19 @@ To choose wrappers, set `wrappers` explicitly:
   imports = [ inputs.headroom-kit.homeManagerModules.default ];
   programs.headroom-kit = {
     enable = true;
-    wrappers = [ "codex-headroom" "copilot-vscode-headroom" ];
+    wrappers = [ "codex-headroom" "pi-headroom" "opencode-headroom" "copilot-vscode-headroom" ];
     vscode.port = 8789;
     # vscode.channel = "insiders"; # Stable is the default
   };
 }
 ```
 
-`headroom` is always included. The module only installs packages.
+`headroom` and the control command are always included. The module installs packages;
+wrappers start their shared runtime on demand.
 
 ### Without the Kit module
 
-Select individual packages or `kit.headroom-kit` for all five commands:
+Select individual packages or `kit.headroom-kit` for all eight commands:
 
 ```nix
 { inputs, pkgs, ... }:
@@ -49,7 +51,7 @@ let
     vscodePort = 8789;
   };
 in {
-  environment.systemPackages = [ kit.headroom kit.codex-headroom kit.copilot-vscode-headroom ];
+  environment.systemPackages = [ kit.headroom kit.headroom-kit-control kit.codex-headroom kit.copilot-vscode-headroom ];
 }
 ```
 
@@ -90,14 +92,19 @@ arguments to `lib.mkHeadroomKit`.
 | `HEADROOM_CODEX_APP_PATH` | Find installed Codex app | `codex.appPath` | `codexAppPath` |
 | `HEADROOM_COPILOT_EXECUTABLE` | `copilot` | `copilot.executable` | `copilotExecutable` |
 | `HEADROOM_COPILOT_PORT` | 8787 | `copilot.port` | `copilotPort` |
+| `HEADROOM_PI_EXECUTABLE` | `pi` | `pi.executable` | `piExecutable` |
+| `HEADROOM_PI_PORT` | 8790 | `pi.port` | `piPort` |
+| `HEADROOM_OPENCODE_EXECUTABLE` | `opencode` | `opencode.executable` | `opencodeExecutable` |
+| `HEADROOM_OPENCODE_PORT` | 8791 | `opencode.port` | `opencodePort` |
 | `HEADROOM_VSCODE_CHANNEL` | `stable`; also `insiders` | `vscode.channel` | `vscodeChannel` |
 | `HEADROOM_VSCODE_EXECUTABLE` | `code` or `code-insiders` | `vscode.executable` | `vscodeExecutable` |
 | `HEADROOM_VSCODE_PORT` | 8787 | `vscode.port` | `vscodePort` |
 | `HEADROOM_VSCODE_USER_DATA_DIR` | [Isolated profile](usage.md#copilot-in-vs-code) | `vscode.userDataDir` | `vscodeUserDataDir` |
 | `HEADROOM_VSCODE_EXTENSIONS_DIR` | Existing channel extensions | `vscode.extensionsDir` | `vscodeExtensionsDir` |
 
-Ports must be 1–65535. Codex and Copilot need different ports. Give Copilot CLI
-and the editor different ports to use them together. The startup timeout is a
+Ports must be 1–65535. Codex and Copilot need different ports. Copilot CLI and
+the editor can share a port when their configuration and Headroom OAuth context match. Pi and OpenCode each need
+a separate port from every other wrapper. The startup timeout is a
 positive integer in seconds, measured after runtime resolution.
 
 Executable values are names on `PATH` or single paths, never shell commands.
