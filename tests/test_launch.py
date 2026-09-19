@@ -811,6 +811,51 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(event["env"]["COPILOT_MODEL"], "saved-model")
         self.assertNotIn("fake-test-token", result.stdout + result.stderr)
 
+    def test_copilot_instances_share_across_model_and_client_env(self) -> None:
+        first = self.run_launcher("--model", "grok-4.6", command="copilot-headroom", mode="traffic")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = self.run_launcher(
+            "--model",
+            "gpt-6-astra",
+            "--reasoning-effort",
+            "high",
+            command="copilot-headroom",
+            mode="traffic",
+            env={
+                "OPENAI_API_KEY": "fake-other-key",
+                "GITHUB_TOKEN": "fake-github-token",
+                "MallocNanoZone": "0",
+                "HTTPS_PROXY": "http://127.0.0.1:1",
+                "SSL_CERT_FILE": str(self.root / "missing.pem"),
+            },
+        )
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("Reusing", second.stderr)
+        self.assertEqual(len([e for e in self.events() if e["event"] == "proxy-start"]), 1)
+
+    def test_copilot_identity_ignores_interpreter_noise(self) -> None:
+        auth = kit_proxy.CopilotAuth("https://api.githubcopilot.com", "fake-refresh")
+        first = kit_proxy.identity("0.37.0", "copilot", {"OPENAI_API_KEY": "one"}, auth)
+        second = kit_proxy.identity(
+            "0.37.0",
+            "copilot",
+            {
+                "OPENAI_API_KEY": "two",
+                "GITHUB_TOKEN": "fake",
+                "MallocNanoZone": "0",
+                "HOME": "/elsewhere",
+            },
+            auth,
+        )
+        self.assertEqual(first, second)
+        other = kit_proxy.identity(
+            "0.37.0",
+            "copilot",
+            {"OPENAI_API_KEY": "one"},
+            kit_proxy.CopilotAuth("https://api.githubcopilot.com", "fake-other"),
+        )
+        self.assertNotEqual(first, other)
+
     def test_copilot_auth_failure_no_proxy_or_agent(self) -> None:
         result = self.run_launcher(command="copilot-headroom", mode="auth-failure")
         self.assertEqual(result.returncode, 1)

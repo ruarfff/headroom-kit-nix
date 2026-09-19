@@ -103,7 +103,7 @@ arguments to `lib.mkHeadroomKit`.
 | `HEADROOM_VSCODE_EXTENSIONS_DIR` | Existing channel extensions | `vscode.extensionsDir` | `vscodeExtensionsDir` |
 
 Ports must be 1–65535. Codex and Copilot need different ports. Copilot CLI and
-the editor can share a port when their configuration and Headroom OAuth context match. Pi and OpenCode each need
+the editor share a port when they use the same Headroom OAuth credential. Pi and OpenCode each need
 a separate port from every other wrapper. The startup timeout is a
 positive integer in seconds, measured after runtime resolution.
 

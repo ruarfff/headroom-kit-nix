@@ -212,49 +212,24 @@ def identity(version: str, kind: str, env: dict[str, str], auth: CopilotAuth | N
             if path.suffix in (".py", ".mjs", ".js", ".json")
         )
     ).hexdigest()
-    # Hash all supported upstream inputs. Terminal/client variables do not affect sharing.
-    effective = {
-        key: value
-        for key, value in env.items()
-        if (
-            key.lower().endswith("_proxy")
-            or key.endswith(("_API_KEY", "_API_TOKEN", "_TARGET_API_URL"))
-            or key.startswith(
-                (
-                    "HEADROOM_",
-                    "GITHUB_",
-                    "OPENAI_",
-                    "ANTHROPIC_",
-                    "AZURE_",
-                    "AWS_",
-                    "GOOGLE_",
-                    "GEMINI_",
-                    "LITELLM_",
-                    "SSL_",
-                    "Malloc",
+    # Copilot clients share one subscription proxy. Model, interpreter, and pane env
+    # must not mint a new identity. Other agents still hash upstream credentials.
+    payload: list[Json] = [version, implementation, kind]
+    if kind == "copilot":
+        payload.append([auth.api_url, auth.refresh_oauth_token] if auth else None)
+    else:
+        payload.append(
+            {
+                key: value
+                for key, value in env.items()
+                if (
+                    key.lower().endswith("_proxy")
+                    or key.endswith(("_API_KEY", "_API_TOKEN", "_TARGET_API_URL"))
+                    or key.startswith(("HEADROOM_", "OPENAI_", "ANTHROPIC_", "AZURE_", "SSL_"))
+                    or key in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
                 )
-            )
-            or key
-            in (
-                "HOME",
-                "XDG_CONFIG_HOME",
-                "XDG_DATA_HOME",
-                "XDG_STATE_HOME",
-                "SSL_CERT_FILE",
-                "SSL_CERT_DIR",
-                "REQUESTS_CA_BUNDLE",
-                "CURL_CA_BUNDLE",
-            )
+            }
         )
-    }
-    payload = [
-        version,
-        implementation,
-        sys.executable,
-        kind,
-        effective,
-        [auth.api_url, auth.refresh_oauth_token] if auth else None,
-    ]
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -410,9 +385,10 @@ def serve_control(
                 )
                 if stopping:
                     terminate(process, group=True)
-                state["ready"] = not stopping and compatible(
-                    health(state["port"]), state["version"], upstream
-                )
+                    state["ready"] = False
+                elif not started:
+                    started = compatible(health(state["port"]), state["version"], upstream)
+                    state["ready"] = started
                 client.sendall(json.dumps(dict(state, stopped=stopping)).encode() + b"\n")
                 if stopping:
                     return
