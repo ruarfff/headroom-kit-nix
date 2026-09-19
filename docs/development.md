@@ -93,9 +93,9 @@ python tests/qa_share.py
 
 The script uses this checkout's `libexec`, throwaway ports, and a short prompt per
 CLI. The second launch must print `Reusing Headroom`. Copilot's second launch also
-changes model, reasoning effort, and client env. This talks to real providers and
-uses your existing sign-in. Interruptions can leave a proxy; the script stops its
-ports on the way out.
+changes model, reasoning effort, and client env. A failed agent is reported and the
+rest still run. This talks to real providers and uses your existing sign-in.
+Interruptions can leave a proxy; the script stops its ports on the way out.
 
 ## Code and test boundaries
 

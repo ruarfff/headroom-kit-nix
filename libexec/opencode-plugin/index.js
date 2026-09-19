@@ -2,7 +2,7 @@
 export default {
   id: "headroom-kit",
   async setup(ctx) {
-    const providers = new Set(["openai", "anthropic"]);
+    const providers = new Set(["openai", "anthropic", "opencode"]);
     await ctx.catalog.transform((catalog) => {
       for (const { provider, models } of catalog.provider.list()) {
         if (!providers.has(provider.id)) continue;

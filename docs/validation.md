@@ -91,8 +91,9 @@ Validation on 2026-09-16:
 
 - Linux runtime, live Codex app routing, isolated editor chat, and remote editor hosts.
 - Authenticated providers, Copilot enterprise domains/model combinations, and
-  Pi/OpenCode subscriptions or custom provider runtimes. Their `openai` and
-  `anthropic` providers are routed; other providers retain their normal routes.
+  Pi/OpenCode custom provider runtimes. Pi routes `openai`, `openai-codex`
+  (best effort), and `anthropic`. OpenCode routes `openai`, `anthropic`, and
+  `opencode` (Zen/free, best effort). Other providers retain their normal routes.
 - Compression quality and savings under representative concurrent workloads.
 - Consumer integration. Published revisions run Linux and macOS checks in the
   [release workflow](https://github.com/ruarfff/headroom-kit-nix/actions/workflows/tag.yml).

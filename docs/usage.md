@@ -48,6 +48,8 @@ through Pi's normal credential setup or environment. Launch from your project:
 
 ```sh
 pi-headroom --provider openai --model <model-id>
+# ChatGPT Codex login (best effort):
+pi-headroom --provider openai-codex --model gpt-5.6-luna
 # Or use Anthropic:
 pi-headroom --provider anthropic --model <model-id>
 ```
@@ -57,9 +59,10 @@ Kit loads a local extension for this process only; it also loads when you pass
 `--no-extensions`. Resume and print-mode arguments pass through unchanged.
 See [Pi provider configuration](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
 
-Only the `openai` and `anthropic` providers are routed. Other providers retain their
-normal routes. Subscription authentication, custom provider runtimes, and extensions
-that replace routing are unverified.
+The `openai`, `openai-codex`, and `anthropic` providers are routed. `openai-codex`
+keeps Pi's ChatGPT login and sends `/v1/codex/responses` at Headroom. Other providers
+retain their normal routes. Custom provider runtimes and extensions that replace
+routing are unverified.
 
 ## OpenCode v2
 
@@ -81,10 +84,11 @@ OpenCode 2.0.3 can fail during simultaneous private-server startup with a JSON
 bootstrap error, including without Kit. If this occurs, start sessions one at a
 time. See [validation details](validation.md#real-clients).
 
-A local plugin routes `openai` and `anthropic` requests, including titles and
-compaction, through Headroom. It overrides per-model endpoints and uses HTTP
-streaming instead of WebSockets. Other providers retain their normal routes.
-Subscription authentication and custom provider runtimes are unverified.
+A local plugin routes `openai`, `anthropic`, and `opencode` (Zen/free models)
+requests, including titles and compaction, through Headroom. It overrides
+per-model endpoints and uses HTTP streaming instead of WebSockets. Other
+providers retain their normal routes. `opencode` is best effort: Headroom must
+still understand that wire format. Custom provider runtimes are unverified.
 
 Kit appends its plugin to the child process's `OPENCODE_CONFIG_CONTENT`; existing
 inline settings and plugins are preserved. This variable must contain a JSON

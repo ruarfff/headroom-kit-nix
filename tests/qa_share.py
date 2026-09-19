@@ -134,41 +134,47 @@ def arguments(name: str, second: bool) -> list[str]:
     if name == "pi":
         return [
             "--provider",
-            "openai",
+            "openai-codex",
             "--model",
-            "gpt-4.1",
+            "gpt-5.6-luna",
             "--no-tools",
             "--no-extensions",
             "-p",
             PROMPT,
         ]
-    return ["run", "--model", "openai/gpt-4.1", PROMPT]
+    return ["run", "--model", "opencode/mimo-v2.5-free", PROMPT]
 
 
-def check(name: str, python: str, defaults: Path, cwd: Path) -> None:
+def check(name: str, python: str, defaults: Path, cwd: Path) -> str | None:
     env = child_env()
-    first = run_kit(python, defaults, f"{name}-headroom", arguments(name, False), env, cwd)
+    try:
+        first = run_kit(python, defaults, f"{name}-headroom", arguments(name, False), env, cwd)
+    except subprocess.TimeoutExpired:
+        return f"{name}: first launch timed out"
     print(*kit_lines(first.stderr), sep="\n")
     if first.returncode or "Started Headroom" not in first.stderr:
-        raise SystemExit(
-            f"{name}: first launch failed (exit {first.returncode}).\n"
-            + "\n".join(first.stderr.splitlines()[-30:])
+        return f"{name}: first launch failed (exit {first.returncode}).\n" + "\n".join(
+            first.stderr.splitlines()[-30:]
         )
     extra = (
         {"MallocNanoZone": "0", "OPENAI_API_KEY": "qa-ignored-openai-key"}
         if name == "copilot"
         else None
     )
-    second = run_kit(
-        python, defaults, f"{name}-headroom", arguments(name, True), child_env(extra), cwd
-    )
+    try:
+        second = run_kit(
+            python, defaults, f"{name}-headroom", arguments(name, True), child_env(extra), cwd
+        )
+    except subprocess.TimeoutExpired:
+        return f"{name}: second launch timed out"
     print(*kit_lines(second.stderr), sep="\n")
     if second.returncode or "Reusing Headroom" not in second.stderr:
-        raise SystemExit(
+        return (
             f"{name}: second launch did not reuse the proxy (exit {second.returncode}).\n"
             + "\n".join(second.stderr.splitlines()[-30:])
         )
     print(f"{name}: two real clients, one proxy: PASS", flush=True)
+    return None
 
 
 def main() -> int:
@@ -213,18 +219,21 @@ def main() -> int:
             )
         )
         env = child_env()
+        failed: list[str] = []
         try:
             for name in CLIS:
-                check(name, python, defaults, cwd)
+                error = check(name, python, defaults, cwd)
+                if error:
+                    print(error, file=sys.stderr, flush=True)
+                    failed.append(name)
         finally:
             for port in ports.values():
                 stop(python, defaults, env, port)
+        if failed:
+            print("QA failed: " + ", ".join(failed), file=sys.stderr)
+            return 1
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except subprocess.TimeoutExpired as error:
-        print(f"QA timed out: {error.cmd[0] if error.cmd else error}", file=sys.stderr)
-        sys.exit(1)
+    sys.exit(main())
