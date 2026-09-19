@@ -82,10 +82,9 @@ blocks external connections; responses are local test errors. OpenCode's isolate
 first-use setup runs before the concurrent pair. No authenticated model support
 or compression quality is established.
 
-To check live reuse with real providers, install every supported agent first:
-Codex CLI, Copilot CLI, Pi, OpenCode v2, and VS Code Stable or Insiders. On macOS
-also install the Codex app (`com.openai.codex`, often `ChatGPT.app`). Missing tools
-fail before any proxy starts.
+To check live reuse with real providers, install the Codex, Copilot, Pi, and
+OpenCode v2 CLIs first. Missing tools fail before any proxy starts. This check
+does not launch VS Code or the Codex app.
 
 ```sh
 python tests/qa_share.py
@@ -94,7 +93,8 @@ python tests/qa_share.py
 The script uses this checkout's `libexec`, throwaway ports, and a short prompt per
 CLI. The second launch must print `Reusing Headroom`. Copilot's second launch also
 changes model, reasoning effort, and client env. A failed agent is reported and the
-rest still run. This talks to real providers and uses your existing sign-in.
+rest still run. Provider quota after a shared proxy is not a Kit failure.
+This talks to real providers and uses your existing sign-in.
 Interruptions can leave a proxy; the script stops its ports on the way out.
 
 ## Code and test boundaries

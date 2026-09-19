@@ -1,7 +1,7 @@
 """Live share check: real CLIs, real proxies, real provider calls.
 
-Requires every supported coding agent on PATH. Missing tools fail before any
-proxy starts. Run from a checkout with Python 3.13 (nix develop).
+Requires the Codex, Copilot, Pi, and OpenCode CLIs on PATH. Missing tools fail
+before any proxy starts. Run from a checkout with Python 3.13 (nix develop).
 """
 
 import json
@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LAUNCH = ROOT / "libexec/launch.py"
 PROMPT = "Reply with the single word ok. Do not run tools."
 CLIS = ("codex", "copilot", "pi", "opencode")
+QUOTA_MARKERS = ("quota", "rate limit", "rate_limit", "too many requests")
 
 
 def which(name: str) -> str | None:
@@ -30,50 +31,10 @@ def python313() -> str | None:
     return which("python3.13")
 
 
-def vscode() -> str | None:
-    return which("code-insiders") or which("code")
-
-
-def codex_app() -> bool:
-    if sys.platform != "darwin":
-        return True
-    explicit = os.environ.get("HEADROOM_CODEX_APP_PATH")
-    apps = (
-        [Path(explicit).expanduser()]
-        if explicit
-        else [
-            Path("/Applications/Codex.app"),
-            Path("/Applications/ChatGPT.app"),
-            Path.home() / "Applications/Codex.app",
-            Path.home() / "Applications/ChatGPT.app",
-        ]
-    )
-    for app in apps:
-        plist = app / "Contents/Info.plist"
-        if not plist.is_file():
-            continue
-        try:
-            result = subprocess.run(
-                ["/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", str(plist)],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        if result.returncode == 0 and result.stdout.strip() == "com.openai.codex":
-            return True
-    return False
-
-
 def missing_tools() -> list[str]:
     missing = [name for name in (*CLIS, "uvx") if not which(name)]
     if not python313():
         missing.append("python3.13")
-    if not vscode():
-        missing.append("code or code-insiders")
-    if not codex_app():
-        missing.append("Codex macOS app (com.openai.codex)")
     return missing
 
 
@@ -85,6 +46,39 @@ def free_port() -> int:
 
 def kit_lines(stderr: str) -> list[str]:
     return [line for line in stderr.splitlines() if line.startswith("Headroom Kit:")]
+
+
+def provider_quota(output: str) -> bool:
+    blob = output.lower()
+    return any(token in blob for token in QUOTA_MARKERS)
+
+
+def client_ok(result: subprocess.CompletedProcess[str]) -> bool:
+    return result.returncode == 0 or provider_quota(f"{result.stdout}\n{result.stderr}")
+
+
+def share_error(
+    name: str,
+    first: subprocess.CompletedProcess[str],
+    second: subprocess.CompletedProcess[str] | None = None,
+) -> str | None:
+    if "Started Headroom" not in first.stderr:
+        return f"{name}: first launch failed (exit {first.returncode}).\n" + "\n".join(
+            first.stderr.splitlines()[-30:]
+        )
+    if second is None:
+        return None
+    if "Reusing Headroom" not in second.stderr:
+        return (
+            f"{name}: second launch did not reuse the proxy (exit {second.returncode}).\n"
+            + "\n".join(second.stderr.splitlines()[-30:])
+        )
+    if client_ok(first) and client_ok(second):
+        return None
+    return (
+        f"{name}: client failed after proxy share (exit {first.returncode}/{second.returncode}).\n"
+        + "\n".join((first.stderr + "\n" + second.stderr).splitlines()[-30:])
+    )
 
 
 def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -152,10 +146,9 @@ def check(name: str, python: str, defaults: Path, cwd: Path) -> str | None:
     except subprocess.TimeoutExpired:
         return f"{name}: first launch timed out"
     print(*kit_lines(first.stderr), sep="\n")
-    if first.returncode or "Started Headroom" not in first.stderr:
-        return f"{name}: first launch failed (exit {first.returncode}).\n" + "\n".join(
-            first.stderr.splitlines()[-30:]
-        )
+    error = share_error(name, first)
+    if error:
+        return error
     extra = (
         {"MallocNanoZone": "0", "OPENAI_API_KEY": "qa-ignored-openai-key"}
         if name == "copilot"
@@ -168,11 +161,12 @@ def check(name: str, python: str, defaults: Path, cwd: Path) -> str | None:
     except subprocess.TimeoutExpired:
         return f"{name}: second launch timed out"
     print(*kit_lines(second.stderr), sep="\n")
-    if second.returncode or "Reusing Headroom" not in second.stderr:
-        return (
-            f"{name}: second launch did not reuse the proxy (exit {second.returncode}).\n"
-            + "\n".join(second.stderr.splitlines()[-30:])
-        )
+    error = share_error(name, first, second)
+    if error:
+        return error
+    if first.returncode or second.returncode:
+        print(f"{name}: proxy shared; provider quota is not a Kit failure", flush=True)
+        return None
     print(f"{name}: two real clients, one proxy: PASS", flush=True)
     return None
 
@@ -186,8 +180,6 @@ def main() -> int:
         return 1
     python = python313()
     assert python is not None
-    editor = vscode()
-    assert editor is not None
     ports = {name: free_port() for name in (*CLIS, "vscode")}
     with tempfile.TemporaryDirectory(prefix="headroom-kit-qa-") as temporary:
         cwd = Path(temporary).resolve()
@@ -206,10 +198,8 @@ def main() -> int:
                     "piPort": ports["pi"],
                     "opencodeExecutable": which("opencode"),
                     "opencodePort": ports["opencode"],
-                    "vscodeChannel": "insiders"
-                    if Path(editor).name.endswith("insiders")
-                    else "stable",
-                    "vscodeExecutable": editor,
+                    "vscodeChannel": "stable",
+                    "vscodeExecutable": None,
                     "vscodePort": ports["vscode"],
                     "vscodeUserDataDir": None,
                     "vscodeExtensionsDir": None,
