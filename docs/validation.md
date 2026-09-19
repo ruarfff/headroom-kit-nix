@@ -26,8 +26,9 @@ Coverage includes:
 - Continued requests from surviving clients and reuse by later launches.
 - Selected-instance stop, startup failure, dead proxies, abandoned sockets,
   stale/recycled PID metadata, and healthy foreign listeners.
-- Version, environment, and account separation; access-token rotation; caller
-  environment and normal routing preservation.
+- Version, environment, and account separation; Copilot reuse across model and
+  client environment; access-token rotation; caller environment and normal routing
+  preservation.
 - Repeated and simultaneous isolated editor windows, settings-path guards, and
   Settings Sync isolation. Editor processes are stand-ins.
 

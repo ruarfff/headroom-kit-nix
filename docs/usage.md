@@ -162,15 +162,17 @@ or install `headroom-kit-control`. Home Manager includes the control command.
 | Route | Default port | Sharing |
 | --- | --- | --- |
 | Codex CLI/app | 8788 | Same configuration |
-| Copilot CLI/editor | 8787 | Same configuration and Headroom OAuth credential |
+| Copilot CLI/editor | 8787 | Same Headroom OAuth credential; model and client env do not matter |
 | Pi | 8790 | Same configuration |
 | OpenCode | 8791 | Same configuration; each client keeps its private OpenCode server |
 
-Reuse requires matching runtime version, Kit implementation, agent policy,
-upstream route, proxy/TLS environment, fallback API credentials, and authentication
-context. A healthy port alone is never accepted. Incompatible proxies and unrelated
-listeners are left running; stop the known managed instance explicitly or choose
-another port. For separate Copilot contexts, use a different editor port:
+Copilot CLI and editor launches share one proxy when Headroom version, Kit code,
+and the Headroom OAuth credential match. `--model`, `--reasoning-effort`, uv's
+Python path, and pane environment do not mint a new proxy. Codex, Pi, and OpenCode
+still require matching upstream credentials and proxy/TLS settings. A healthy port
+alone is never accepted. Incompatible proxies and unrelated listeners are left
+running; stop the known managed instance explicitly or choose another port. For a
+separate Copilot account, use a different editor port:
 
 ```sh
 HEADROOM_VSCODE_PORT=8789 copilot-vscode-headroom .
