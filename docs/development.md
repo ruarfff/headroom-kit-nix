@@ -61,7 +61,15 @@ sandbox blocks the network. Proves routing, not authenticated models:
 
 ```sh
 python tests/agent_routing_smoke.py
+# Pi only; no OpenCode installation needed:
+python tests/agent_routing_smoke.py --agent pi
 ```
+
+Pi includes 18 Copilot cases: Claude, Gemini, and GPT with saved OAuth, a saved
+API key, or no Pi login, under ordinary and wildcard proxy settings. Each request
+must reach the Copilot endpoint with the requested model and a placeholder token,
+not the cache proxy, conflicting endpoint, or forward proxy. Config and fake
+credential files must remain unchanged. OpenAI/Anthropic cases run as before.
 
 Needs Codex, Pi, and OpenCode. Real launchers against a managed fake proxy; each
 pair sends a distinct prompt. OpenCode first-use setup runs first:

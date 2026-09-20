@@ -76,11 +76,14 @@ a local extension for this process only, including with `--no-extensions`. Resum
 and print-mode arguments pass through.
 Routed providers: `openai`, `openai-codex` (ChatGPT login, `/v1/codex/responses` at
 Headroom), `anthropic`, and `github-copilot`. Copilot traffic uses the shared Copilot
-proxy and [Headroom's Copilot login](#copilot-cli), not Pi's. Pi keeps its native
-Copilot client; Kit only swaps the token. Other providers keep their normal routes.
-**Known gap:** Pi 0.85.1 Copilot/Claude can bypass the configured endpoint
-([issue #5](https://github.com/ruarfff/headroom-kit-nix/issues/5)). Use Copilot CLI
-for this route until that is fixed; a successful Pi reply alone does not prove routing.
+proxy and [Headroom's Copilot login](#copilot-cli) for upstream requests. Pi keeps
+its native catalog, protocols, and saved-login refresh. Kit pins the local URL and
+placeholder token after Pi resolves auth, so a saved OAuth endpoint cannot bypass
+Headroom. Other providers keep their normal routes.
+
+Tested with Pi **0.85.1** and Copilot Claude, Gemini, and GPT models; see
+[validation](validation.md#pi-copilot-routing). A separate Pi Copilot login is not
+required. An existing Pi login still uses Pi's normal refresh and model filtering.
 See [Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
 
 ## OpenCode v2
@@ -110,10 +113,10 @@ keep their normal routes.
 Kit appends the plugin to the child's `OPENCODE_CONFIG_CONTENT` (must be a JSON
 object); existing inline settings stay. JSONC files are unchanged.
 
-**Known gap:** OpenCode 2.0.11 Copilot requests can bypass Headroom even after
-login ([issue #7](https://github.com/ruarfff/headroom-kit-nix/issues/7)). Use
-`copilot-headroom` for this route until that is fixed; a successful OpenCode reply
-alone does not prove routing.
+**Known gap:** Kit's plugin fails to load in OpenCode 2.0.11; Copilot and OpenAI
+requests bypass Headroom ([issue #7](https://github.com/ruarfff/headroom-kit-nix/issues/7)).
+Do not rely on Headroom routing from this version. Use `copilot-headroom` for
+Copilot until that is fixed; a successful OpenCode reply alone does not prove routing.
 See [OpenCode config](https://opencode.ai/v2/docs/config/) and
 [plugins](https://opencode.ai/v2/docs/plugins/).
 
