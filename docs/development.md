@@ -79,7 +79,9 @@ python tests/qa_share.py
 
 Uses this checkout's `libexec`, throwaway ports, and a short prompt per CLI. The
 second launch must print `Reusing Headroom`. Copilot's second launch also changes
-model, reasoning effort, and client env. A failed agent is reported and the rest
+model, reasoning effort, and client env. Pi and OpenCode `github-copilot` cases run
+after Copilot so they reuse that proxy. OpenCode Copilot is skipped if
+`opencode models` has no `github-copilot/` entries. A failed agent is reported and the rest
 continue. Quota after a shared proxy is not a Kit failure. The script stops its
 ports on the way out.
 

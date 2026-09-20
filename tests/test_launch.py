@@ -21,10 +21,17 @@ kit_proxy = importlib.import_module("kit_proxy")
 STANDIN = Path(__file__).with_name("standin.py").read_text()
 
 
-def free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return listener.getsockname()[1]
+def unique_ports(count: int) -> list[int]:
+    listeners = []
+    try:
+        for _ in range(count):
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            listeners.append(listener)
+        return [listener.getsockname()[1] for listener in listeners]
+    finally:
+        for listener in listeners:
+            listener.close()
 
 
 class LauncherTests(unittest.TestCase):
@@ -50,21 +57,22 @@ class LauncherTests(unittest.TestCase):
         runtime = self.root / "runtime python"
         runtime.write_text(f"#!{sys.executable}\n" + STANDIN)
         runtime.chmod(0o755)
+        codex_port, copilot_port, pi_port, opencode_port, vscode_port = unique_ports(5)
         self.cfg = {
             "version": "0.37.0",
             "startupTimeout": 2,
             "codexExecutable": "codex",
-            "codexPort": free_port(),
+            "codexPort": codex_port,
             "codexAppPath": None,
             "copilotExecutable": "copilot",
-            "copilotPort": free_port(),
+            "copilotPort": copilot_port,
             "piExecutable": "pi",
-            "piPort": free_port(),
+            "piPort": pi_port,
             "opencodeExecutable": "opencode",
-            "opencodePort": free_port(),
+            "opencodePort": opencode_port,
             "vscodeChannel": "insiders",
             "vscodeExecutable": None,
-            "vscodePort": free_port(),
+            "vscodePort": vscode_port,
             "vscodeUserDataDir": None,
             "vscodeExtensionsDir": None,
             "uv": str(self.bin / "uvx"),
@@ -223,9 +231,73 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(
             event["env"]["HEADROOM_KIT_ENDPOINT"], f"http://127.0.0.1:{self.cfg['piPort']}/v1"
         )
+        self.assertNotIn("HEADROOM_KIT_COPILOT_ENDPOINT", event["env"])
         self.assertEqual(config.read_bytes(), b'{"providers": {}}\n')
         self.assertEqual(event["cwd"], str(self.root))
         self.assertFalse(any(e["event"] == "proxy-stop" for e in self.events()))
+
+    def test_pi_github_copilot_uses_the_shared_copilot_proxy(self) -> None:
+        result = self.run_launcher(
+            "--provider",
+            "github-copilot",
+            command="pi-headroom",
+            mode="agent-failure",
+        )
+        self.assertEqual(result.returncode, 37, result.stderr)
+        event = next(e for e in self.events() if e["event"] == "agent")
+        self.assertEqual(
+            event["env"]["HEADROOM_KIT_COPILOT_ENDPOINT"],
+            f"http://127.0.0.1:{self.cfg['copilotPort']}/v1",
+        )
+        starts = [e for e in self.events() if e["event"] == "proxy-start"]
+        self.assertEqual(len(starts), 2)
+        self.assertTrue(any("--openai-api-url" in e["args"] for e in starts))
+
+    def test_pi_github_copilot_requires_headroom_login(self) -> None:
+        result = self.run_launcher(
+            "--provider",
+            "github-copilot",
+            command="pi-headroom",
+            mode="auth-failure",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("copilot-auth login", result.stderr)
+        self.assertFalse(any(e["event"] == "agent" for e in self.events()))
+        self.assertFalse(any(e["event"] == "proxy-start" for e in self.events()))
+
+    def test_opencode_github_copilot_uses_the_shared_copilot_proxy(self) -> None:
+        result = self.run_launcher(
+            "run",
+            "--model",
+            "github-copilot/gpt-4.1",
+            command="opencode-headroom",
+            mode="agent-failure",
+        )
+        self.assertEqual(result.returncode, 37, result.stderr)
+        event = [e for e in self.events() if e["event"] == "agent"][-1]
+        plugin = json.loads(event["env"]["OPENCODE_CONFIG_CONTENT"])["plugins"][-1]
+        self.assertEqual(
+            plugin["options"]["copilot"], f"http://127.0.0.1:{self.cfg['copilotPort']}/v1"
+        )
+        self.assertEqual(
+            plugin["options"]["endpoint"], f"http://127.0.0.1:{self.cfg['opencodePort']}/v1"
+        )
+
+    def test_opencode_github_copilot_requires_headroom_login(self) -> None:
+        result = self.run_launcher(
+            "run",
+            "--model",
+            "github-copilot/gpt-4.1",
+            command="opencode-headroom",
+            mode="auth-failure",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("copilot-auth login", result.stderr)
+        self.assertFalse(any(e["event"] == "proxy-start" for e in self.events()))
+        agents = [e for e in self.events() if e["event"] == "agent"]
+        self.assertTrue(agents)
+        self.assertTrue(all(e["args"] == ["--version"] for e in agents))
+        self.assertTrue(all("OPENCODE_CONFIG_CONTENT" not in e.get("env", {}) for e in agents))
 
     def test_opencode_private_server_and_config_overlay(self) -> None:
         config = self.root / "opencode.jsonc"

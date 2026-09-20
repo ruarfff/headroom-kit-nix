@@ -47,8 +47,10 @@ unchanged. Local errors prove routing, not model support.
 - Linux runtime, live Codex app routing, isolated editor chat, and remote editor hosts.
 - Authenticated providers, Copilot enterprise domains/model combinations, and
   Pi/OpenCode custom provider runtimes. Pi routes `openai`, `openai-codex`
-  (best effort), and `anthropic`. OpenCode routes `openai`, `anthropic`, and
-  `opencode` (Zen/free, best effort). Other providers keep their normal routes.
+  (best effort), `anthropic`, and `github-copilot` (Headroom Copilot login;
+  native client, token swap). OpenCode routes `openai`, `anthropic`,
+  `opencode` (Zen/free, best effort), and `github-copilot`. Other providers keep
+  their normal routes.
 - Compression quality under concurrent load.
 - Consumer integration. Published revisions run Linux and macOS checks in the
   [release workflow](https://github.com/ruarfff/headroom-kit-nix/actions/workflows/tag.yml).

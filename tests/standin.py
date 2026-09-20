@@ -69,6 +69,7 @@ def run_agent(name: str) -> int:
                 "COPILOT_PROVIDER_WIRE_API",
                 "COPILOT_MODEL",
                 "HEADROOM_KIT_ENDPOINT",
+                "HEADROOM_KIT_COPILOT_ENDPOINT",
                 "OPENCODE_CONFIG_CONTENT",
                 "VSCODE_IPC_HOOK_CLI",
                 "VSCODE_PORTABLE",

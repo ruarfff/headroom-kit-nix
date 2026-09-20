@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LAUNCH = ROOT / "libexec/launch.py"
 PROMPT = "Reply with the single word ok. Do not run tools."
 CLIS = ("codex", "copilot", "pi", "opencode")
-QUOTA_MARKERS = ("quota", "rate limit", "rate_limit", "too many requests")
+CASES = (*CLIS, "pi-copilot", "opencode-copilot")
+QUOTA_MARKERS = ("quota", "rate limit", "rate_limit", "too many requests", "usage limit")
 
 
 def which(name: str) -> str | None:
@@ -38,10 +39,17 @@ def missing_tools() -> list[str]:
     return missing
 
 
-def free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return listener.getsockname()[1]
+def unique_ports(count: int) -> list[int]:
+    listeners = []
+    try:
+        for _ in range(count):
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            listeners.append(listener)
+        return [listener.getsockname()[1] for listener in listeners]
+    finally:
+        for listener in listeners:
+            listener.close()
 
 
 def kit_lines(stderr: str) -> list[str]:
@@ -62,7 +70,7 @@ def share_error(
     first: subprocess.CompletedProcess[str],
     second: subprocess.CompletedProcess[str] | None = None,
 ) -> str | None:
-    if "Started Headroom" not in first.stderr:
+    if "Started Headroom" not in first.stderr and "Reusing Headroom" not in first.stderr:
         return f"{name}: first launch failed (exit {first.returncode}).\n" + "\n".join(
             first.stderr.splitlines()[-30:]
         )
@@ -117,6 +125,28 @@ def stop(python: str, defaults: Path, env: dict[str, str], port: int) -> None:
     )
 
 
+def github_copilot_models(listing: str) -> bool:
+    return any(line.startswith("github-copilot/") for line in listing.splitlines())
+
+
+def opencode_copilot_ready(executable: str) -> bool:
+    try:
+        listing = subprocess.run(
+            [executable, "models"], capture_output=True, text=True, timeout=30, check=False
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return github_copilot_models(listing)
+
+
+def wrapper(name: str) -> str:
+    if name.startswith("opencode"):
+        return "opencode-headroom"
+    if name.startswith("pi"):
+        return "pi-headroom"
+    return f"{name}-headroom"
+
+
 def arguments(name: str, second: bool) -> list[str]:
     if name == "codex":
         return ["exec", "--skip-git-repo-check", "--sandbox", "read-only", PROMPT]
@@ -125,6 +155,20 @@ def arguments(name: str, second: bool) -> list[str]:
         if second:
             args += ["--reasoning-effort", "high"]
         return [*args, "-p", PROMPT, "-s", "--allow-all-tools"]
+    copilot_model = "gpt-6-astra" if second else "grok-4.6"
+    if name == "pi-copilot":
+        return [
+            "--provider",
+            "github-copilot",
+            "--model",
+            copilot_model,
+            "--no-tools",
+            "--no-extensions",
+            "-p",
+            PROMPT,
+        ]
+    if name == "opencode-copilot":
+        return ["run", "--model", f"github-copilot/{copilot_model}", PROMPT]
     if name == "pi":
         return [
             "--provider",
@@ -142,7 +186,7 @@ def arguments(name: str, second: bool) -> list[str]:
 def check(name: str, python: str, defaults: Path, cwd: Path) -> str | None:
     env = child_env()
     try:
-        first = run_kit(python, defaults, f"{name}-headroom", arguments(name, False), env, cwd)
+        first = run_kit(python, defaults, wrapper(name), arguments(name, False), env, cwd)
     except subprocess.TimeoutExpired:
         return f"{name}: first launch timed out"
     print(*kit_lines(first.stderr), sep="\n")
@@ -156,7 +200,7 @@ def check(name: str, python: str, defaults: Path, cwd: Path) -> str | None:
     )
     try:
         second = run_kit(
-            python, defaults, f"{name}-headroom", arguments(name, True), child_env(extra), cwd
+            python, defaults, wrapper(name), arguments(name, True), child_env(extra), cwd
         )
     except subprocess.TimeoutExpired:
         return f"{name}: second launch timed out"
@@ -180,7 +224,7 @@ def main() -> int:
         return 1
     python = python313()
     assert python is not None
-    ports = {name: free_port() for name in (*CLIS, "vscode")}
+    ports = dict(zip((*CLIS, "vscode"), unique_ports(len(CLIS) + 1), strict=True))
     with tempfile.TemporaryDirectory(prefix="headroom-kit-qa-") as temporary:
         cwd = Path(temporary).resolve()
         defaults = cwd / "defaults.json"
@@ -210,8 +254,15 @@ def main() -> int:
         )
         env = child_env()
         failed: list[str] = []
+        opencode = which("opencode")
         try:
-            for name in CLIS:
+            for name in CASES:
+                if name == "opencode-copilot" and opencode and not opencode_copilot_ready(opencode):
+                    print(
+                        "opencode-copilot: skipped (OpenCode has no github-copilot models)",
+                        flush=True,
+                    )
+                    continue
                 error = check(name, python, defaults, cwd)
                 if error:
                     print(error, file=sys.stderr, flush=True)
