@@ -56,7 +56,7 @@ def smoke_adapters(env: dict[str, str], root: Path) -> None:
     uvx = shutil.which("uvx")
     if uvx is None:
         raise RuntimeError("uvx is required; run this smoke test inside nix develop")
-    for script in ("smoke_writer.py", "smoke_auth.py"):
+    for script in ("smoke_writer.py", "smoke_auth.py", "smoke_metrics.py"):
         subprocess.run(
             [
                 uvx,

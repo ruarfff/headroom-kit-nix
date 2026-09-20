@@ -118,12 +118,32 @@ OpenCode 2.0.11's OpenAI case. Its plugin reported an undefined `ctx.catalog` at
 Headroom. The OpenCode adapter is unchanged. This broader plugin failure is also
 tracked in #7; the current combined smoke test does not pass.
 
+## Persistent local metrics
+
+[Issue #6](https://github.com/ruarfff/headroom-kit-nix/issues/6) was checked on
+Apple Silicon macOS with Headroom **0.37.0** and Nix Python **3.13**.
+
+Launcher tests cover persistent defaults, local telemetry, native overrides,
+relative and empty paths, per-port counter files, and incompatible reuse across
+all proxy types, including Copilot. Routing and compression settings are unchanged.
+
+The real-runtime smoke starts two independent Headroom apps with temporary
+storage and records 23 synthetic requests in each. All 46 events appear in the
+shared ledger and `headroom savings --json`. Each process has an unflushed counter
+batch before SIGTERM; shutdown saves the full total, and restarted proxies expose
+it through `/stats`. Telemetry opt-out and stateless operation also pass. No
+provider credentials or model requests are used.
+
+Checks: 81 Python tests, 4 client-adapter tests, native `nix flake check`,
+all-systems evaluation, Ruff, nixfmt, anti-slop, and the real-runtime smoke passed.
+This does not test recovery of an unflushed batch after abrupt termination or
+compression quality. See [metrics and retention](usage.md#metrics-and-retention).
+
 ## Remaining limits
 
 Follow-up work is tracked in issues, not implied by passing checks:
 
 - [#7](https://github.com/ruarfff/headroom-kit-nix/issues/7): OpenCode Copilot bypass.
-- [#6](https://github.com/ruarfff/headroom-kit-nix/issues/6): metrics across proxy restarts.
 - [#8](https://github.com/ruarfff/headroom-kit-nix/issues/8): custom-CA TLS negotiation
   and misleading authentication errors.
 - [#9](https://github.com/ruarfff/headroom-kit-nix/issues/9): native Copilot CLI

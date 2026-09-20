@@ -264,13 +264,15 @@ unchanged.
 - CLI clients merge `NO_PROXY`/`no_proxy` and add `127.0.0.1`, `localhost`, and
   `::1`. A standalone `*` sets both spellings to `*` and removes HTTP, HTTPS, and
   ALL proxy variables (both cases) from the client copy only.
-- Codex, Pi, and OpenCode use cache mode with lossless, stateless operation.
+- Codex, Pi, and OpenCode use cache mode with lossless compression.
   Kompress/fallback, semantic cache, rate limiting, learning, wire debug, output
   shaping, effort routing, and verbosity autotuning are off. Copilot keeps
   standard compression and local dashboard stats, with no learning.
-- `HEADROOM_TELEMETRY` is off for Codex, Pi, and OpenCode; on for Copilot.
-  `DO_NOT_TRACK=1` is set. Inherited `HEADROOM_*` tuning and upstream overrides are
-  dropped. Direct `headroom` still accepts upstream flags.
+- Every managed proxy defaults to persistent state and local telemetry. Native
+  [metrics and storage settings](configuration.md#local-metrics-and-storage)
+  pass through; other inherited `HEADROOM_*` tuning and upstream overrides are
+  dropped. External beacon uploads and full message logging stay off, with
+  `DO_NOT_TRACK=1`. Direct `headroom` still accepts upstream flags.
 - A detached Kit owner holds the port lock and a reserved TCP socket. Headroom
   inherits that socket, so another listener cannot win a startup race. The private
   control socket verifies the live instance; stop never signals a recorded PID.
@@ -281,6 +283,28 @@ unchanged.
 See [Headroom proxy controls](https://docs.headroomlabs.ai/docs/proxy).
 
 </details>
+
+## Metrics and retention
+
+The dashboard and `/stats` include each proxy's persistent lifetime totals
+(`/stats` exposes them under `persistent_savings.lifetime`). These counters
+survive graceful stops and restarts. They are separate from live process counters.
+
+`headroom savings` reads the shared event ledger across proxies and retains only
+**30 days**, even where its JSON calls the total `lifetime`. It is not a combined
+all-time report. Kit does not add a report or merge the per-port counter files.
+See Headroom's [savings](https://docs.headroomlabs.ai/docs/savings) and
+[metrics](https://docs.headroomlabs.ai/docs/metrics) documentation.
+
+Persistence permits Headroom's normal local state writes, not just counters.
+Local telemetry does not enable the external beacon, full message logging, or
+learning. Compression settings are unchanged. Abrupt termination can still lose
+an unflushed counter batch.
+
+After upgrading, explicitly stop each existing proxy with
+`headroom-kit stop <port>`, then relaunch its wrapper. Previously discarded
+history cannot be recovered. See [storage settings](configuration.md#local-metrics-and-storage)
+for paths and overrides.
 
 ## Check routing and compression
 
