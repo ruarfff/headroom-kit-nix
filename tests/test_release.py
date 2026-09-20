@@ -46,15 +46,21 @@ class ReleaseTest(unittest.TestCase):
             "flake.lock",
             "libexec/kit_session.py",
             "nix/packages.nix",
-            "skills/install-headroom-kit/SKILL.md",
-            "LICENSE",
-            "NOTICE.md",
         ):
             with self.subTest(path=path):
                 self.assertEqual(release.release_plan(["v0.1.0"], [], [path]), ("v0.1.1", True))
         for paths in (
             [],
-            ["README.md", "docs/usage.md", "tests/test_release.py", ".github/workflows/tag.yml"],
+            [
+                "README.md",
+                "docs/usage.md",
+                "tests/test_release.py",
+                ".github/workflows/tag.yml",
+                ".gitignore",
+                "skills/install-headroom-kit/SKILL.md",
+                "LICENSE",
+                "NOTICE.md",
+            ],
         ):
             with self.subTest(paths=paths):
                 self.assertEqual(release.release_plan(["v0.1.0"], [], paths), ("", False))

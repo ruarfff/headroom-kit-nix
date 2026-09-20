@@ -121,10 +121,10 @@ Only a successful push to `main` can publish a release; pull requests run checks
 only. The release job alone has write permission.
 
 The first tag is `v0.1.0`; later tags increment the highest stable tag's patch.
-Releases follow changes to `flake.nix`, `flake.lock`, `libexec/`, `nix/`, `skills/`,
-`LICENSE`, or `NOTICE.md`. The comparison uses the last reachable stable release,
-so changes from a failed push remain eligible. Documentation, test, or CI-only
-changes do not create a new tag after the first release.
+Releases follow changes to `flake.nix`, `flake.lock`, `libexec/`, or `nix/`.
+The comparison uses the last reachable stable release, so changes from a failed
+push remain eligible. Documentation, skills, license, test, or CI-only changes
+do not create a new tag after the first release.
 
 Each tag gets a GitHub Release with generated notes. Rerunning the same commit
 reuses its stable tag and can finish a failed release publication. Existing

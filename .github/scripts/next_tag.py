@@ -4,7 +4,7 @@ import re
 import subprocess
 from collections.abc import Iterable
 
-RELEASE_PATHS = {"flake.nix", "flake.lock", "libexec", "nix", "skills", "LICENSE", "NOTICE.md"}
+RELEASE_PATHS = {"flake.nix", "flake.lock", "libexec", "nix"}
 
 
 def stable_version(tag: str) -> tuple[int, int, int] | None:
