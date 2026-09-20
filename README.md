@@ -53,7 +53,7 @@ and NixOS/nix-darwin without Home Manager.
 | Command | Setup |
 | --- | --- |
 | `codex-headroom` | Use your existing Codex sign-in |
-| `copilot-headroom --model <model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first |
+| `copilot-headroom` / `copilot-headroom --model <model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first; native model selection, including `auto` |
 | `pi-headroom --provider openai --model <model-id>` | [Configure Pi](docs/usage.md#pi) with an OpenAI or Anthropic API key |
 | `pi-headroom --provider github-copilot --model <model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first |
 | `opencode-headroom` | [Configure OpenCode v2](docs/usage.md#opencode-v2) with an OpenAI or Anthropic API key |

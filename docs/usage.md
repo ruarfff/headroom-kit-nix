@@ -27,16 +27,34 @@ API-key routing is [unverified](validation.md).
    headroom copilot-auth login
    ```
 
-3. Choose a model available to your account:
+3. Launch with your normal model selection, or choose one available to your account:
 
    ```sh
+   copilot-headroom
+   copilot-headroom --model auto
    copilot-headroom --model <model-id>
    ```
 
-An explicit model is required; automatic selection does not carry over. Kit uses
-subscription auth and the Responses API, not API tokens. The shared proxy pins
-Headroom's OAuth credential and refreshes access tokens per Copilot integration.
-Subscription routing is experimental; enterprise domains are unverified.
+Kit keeps Copilot's native catalog and model routing, including `COPILOT_MODEL`,
+`--model=...`, and in-session `/model` selection. Copilot chooses Responses,
+Completions, or Anthropic Messages; Kit does not keep a model list or force a wire
+API. This requires a Copilot CLI with `COPILOT_API_URL` support, tested with
+**1.0.87-0**. Older builds that ignore this override can bypass Headroom;
+version/capability enforcement is tracked in
+[issue #9](https://github.com/ruarfff/headroom-kit-nix/issues/9).
+
+```text
+Copilot model selection → Headroom → GitHub Copilot
+```
+
+Inherited `COPILOT_PROVIDER_*` settings are removed from the child so BYOK cannot
+replace native routing. Normal Copilot launches are unchanged. Use normal Copilot
+for BYOK providers, not this subscription wrapper.
+
+The shared proxy pins Headroom's OAuth credential and refreshes access tokens per
+Copilot integration. Use the same account for Copilot and Headroom so model access
+matches. Enterprise domains and untested model combinations remain unverified;
+see [validation](validation.md#copilot-cli-model-routing).
 
 ## Pi
 
@@ -60,6 +78,9 @@ Routed providers: `openai`, `openai-codex` (ChatGPT login, `/v1/codex/responses`
 Headroom), `anthropic`, and `github-copilot`. Copilot traffic uses the shared Copilot
 proxy and [Headroom's Copilot login](#copilot-cli), not Pi's. Pi keeps its native
 Copilot client; Kit only swaps the token. Other providers keep their normal routes.
+**Known gap:** Pi 0.85.1 Copilot/Claude can bypass the configured endpoint
+([issue #5](https://github.com/ruarfff/headroom-kit-nix/issues/5)). Use Copilot CLI
+for this route until that is fixed; a successful Pi reply alone does not prove routing.
 See [Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
 
 ## OpenCode v2
@@ -88,6 +109,11 @@ OpenCode keeps its native Copilot client; Kit only swaps the token. Other provid
 keep their normal routes.
 Kit appends the plugin to the child's `OPENCODE_CONFIG_CONTENT` (must be a JSON
 object); existing inline settings stay. JSONC files are unchanged.
+
+**Known gap:** OpenCode 2.0.11 Copilot requests can bypass Headroom even after
+login ([issue #7](https://github.com/ruarfff/headroom-kit-nix/issues/7)). Use
+`copilot-headroom` for this route until that is fixed; a successful OpenCode reply
+alone does not prove routing.
 See [OpenCode config](https://opencode.ai/v2/docs/config/) and
 [plugins](https://opencode.ai/v2/docs/plugins/).
 
@@ -183,7 +209,8 @@ their environment. Reboot stops them.
 | Runtime download fails | Check the version, uv index access, cache permissions, and CA certificates; use `UV_NATIVE_TLS=true` if needed |
 | Proxy never becomes ready | Try `HEADROOM_VERSION=0.37.0` and a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
 | Port occupied | Use `headroom-kit status` and stop the selected managed port, or choose another port; inspect unknown listeners separately |
-| Copilot auth/model failure | Run `headroom copilot-auth status`; check your subscription and explicit model |
+| Copilot auth/model failure | Run `headroom copilot-auth status`; use matching accounts and a model from Copilot's catalog (`gemini`, not `gemma`) |
+| Copilot auth fails only with custom CA settings | Headroom 0.37.0 can negotiate the wrong HTTP protocol with `SSL_CERT_FILE`; see [issue #8](https://github.com/ruarfff/headroom-kit-nix/issues/8). Do not disable certificate verification or assume another login will fix it |
 | Editor settings conflict | Repair JSONC or conflicting endpoint settings in the isolated profile, then restart its wrapper |
 
 Readiness failures stop the launch; there is no direct-connection fallback.
@@ -225,10 +252,12 @@ unchanged.
 - The macOS app uses `open --env` with `CODEX_APP_SERVER_OPENAI_BASE_URL` and
   `CODEX_APP_SERVER_FORCE_CLI=1`. Those hooks can change with app updates; shell
   proxy exclusions do not prove live GUI routing.
-- Copilot CLI gets a non-secret local bearer placeholder, `/v1`, and the
-  Responses wire API. The proxy strips client credentials on Copilot upstream
-  requests and uses its pinned Headroom OAuth context. Access tokens are exchanged
-  per integration ID and refreshed by Headroom.
+- Copilot CLI gets the local proxy root as `COPILOT_API_URL`, with no BYOK
+  overrides. Its native client keeps model discovery and per-model wire selection.
+  Both OpenAI-shaped and Anthropic-shaped routes target GitHub Copilot. The proxy
+  strips client credentials on Copilot upstream requests and uses its pinned
+  Headroom OAuth context. Access tokens are exchanged per integration ID and
+  refreshed by Headroom.
 - CLI clients merge `NO_PROXY`/`no_proxy` and add `127.0.0.1`, `localhost`, and
   `::1`. A standalone `*` sets both spellings to `*` and removes HTTP, HTTPS, and
   ALL proxy variables (both cases) from the client copy only.

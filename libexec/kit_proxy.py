@@ -165,7 +165,7 @@ def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
             "--no-rate-limit",
         ]
     else:
-        args += ["--openai-api-url", upstream, "--telemetry"]
+        args += ["--openai-api-url", upstream, "--anthropic-api-url", upstream, "--telemetry"]
     return args
 
 

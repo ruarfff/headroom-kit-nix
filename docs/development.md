@@ -85,6 +85,23 @@ after Copilot so they reuse that proxy. OpenCode Copilot is skipped if
 continue. Quota after a shared proxy is not a Kit failure. The script stops its
 ports on the way out.
 
+## Live Copilot model routing
+
+Build the checkout, then pass model IDs available to your signed-in Copilot account:
+
+```sh
+nix build "path:$PWD#headroom-kit"
+python tests/copilot_models_smoke.py ./result gemini-3.8-flash gpt-5.4 claude-sonnet-5 auto
+```
+
+Requires Copilot CLI with `COPILOT_API_URL` support (tested with 1.0.87-0) and
+Headroom's Copilot login. Each supplied model makes a real, billable request.
+The check uses a temporary directory and port, disables built-in tools, injects
+conflicting BYOK settings, and requires both an `ok` reply and a Headroom request
+counter increase. Later launches must reuse the proxy. It stops the test proxy
+on exit and does not print raw client diagnostics. A model rejection, timeout,
+or quota error fails the check; none counts as routing success.
+
 ## Code and test boundaries
 
 ```text

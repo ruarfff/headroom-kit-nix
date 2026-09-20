@@ -389,16 +389,10 @@ def session(
     endpoint = start_proxy(cfg, version, "copilot", port, auth)
     if command == "copilot-headroom":
         env = client_environment(os.environ)
-        env.pop("COPILOT_PROVIDER_API_KEY", None)
-        env.update(
-            COPILOT_PROVIDER_TYPE="openai",
-            COPILOT_PROVIDER_BASE_URL=endpoint + "/v1",
-            COPILOT_PROVIDER_WIRE_API="responses",
-            COPILOT_PROVIDER_BEARER_TOKEN="headroom-kit",
-            GITHUB_COPILOT_USE_TOKEN_EXCHANGE="false",
-            GITHUB_COPILOT_API_URL=auth.api_url,
-            OPENAI_TARGET_API_URL=auth.api_url,
-        )
+        # Keep Copilot's catalog, auto selection, and per-model wire routing.
+        # Any inherited BYOK setting can put it back in the single-model lane.
+        env = {key: value for key, value in env.items() if not key.startswith("COPILOT_PROVIDER_")}
+        env["COPILOT_API_URL"] = endpoint
         return launch([agent, *args], env)
     data, extensions = editor_paths(cfg)
     with locked(

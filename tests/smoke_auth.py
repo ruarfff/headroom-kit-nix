@@ -68,13 +68,19 @@ async def check_auth(adapter: ModuleType, exchanges: list[tuple[str, str]]) -> N
             ("gho_fake_other_editor_account", "vscode-chat"),
         ]
     ):
-        result = await adapter.apply_copilot_api_auth(
-            {"Authorization": f"Bearer {client}", "Copilot-Integration-Id": integration},
-            url="https://api.githubcopilot.com/responses",
-        )
-        expected = 1 if index < 2 else 2
-        assert result["Authorization"] == f"Bearer tid_fake_refreshed_{expected}"
-        assert result["Copilot-Integration-Id"] == integration
+        for path in ("/responses", "/chat/completions", "/v1/messages", "/models"):
+            result = await adapter.apply_copilot_api_auth(
+                {
+                    "Authorization": f"Bearer {client}",
+                    "x-api-key": "fake-client-key",
+                    "Copilot-Integration-Id": integration,
+                },
+                url="https://api.githubcopilot.com" + path,
+            )
+            expected = 1 if index < 2 else 2
+            assert result["Authorization"] == f"Bearer tid_fake_refreshed_{expected}"
+            assert result["Copilot-Integration-Id"] == integration
+            assert "x-api-key" not in result
     assert exchanges == [
         ("Bearer fake-pinned-account", "copilot-cli"),
         ("Bearer fake-pinned-account", "vscode-chat"),
