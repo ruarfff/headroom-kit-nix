@@ -58,9 +58,8 @@ a local extension for this process only, including with `--no-extensions`. Resum
 and print-mode arguments pass through.
 Routed providers: `openai`, `openai-codex` (ChatGPT login, `/v1/codex/responses` at
 Headroom), `anthropic`, and `github-copilot`. Copilot traffic uses the shared Copilot
-proxy and [Headroom's Copilot login](#copilot-cli), not Pi's. Claude/Gemini ids on
-Copilot may not speak Responses; that is the same limit as `copilot-headroom`.
-Other providers keep their normal routes.
+proxy and [Headroom's Copilot login](#copilot-cli), not Pi's. Pi keeps its native
+Copilot client; Kit only swaps the token. Other providers keep their normal routes.
 See [Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
 
 ## OpenCode v2
@@ -85,8 +84,8 @@ A local plugin routes `openai`, `anthropic`, `opencode` (Zen/free, best effort),
 and `github-copilot` through Headroom, including titles and compaction. It overrides
 per-model endpoints and uses HTTP streaming, not WebSockets. Copilot traffic uses
 the shared Copilot proxy and [Headroom's Copilot login](#copilot-cli), not OpenCode's.
-Claude/Gemini ids on Copilot may not speak Responses. Other providers keep their
-normal routes.
+OpenCode keeps its native Copilot client; Kit only swaps the token. Other providers
+keep their normal routes.
 Kit appends the plugin to the child's `OPENCODE_CONFIG_CONTENT` (must be a JSON
 object); existing inline settings stay. JSONC files are unchanged.
 See [OpenCode config](https://opencode.ai/v2/docs/config/) and

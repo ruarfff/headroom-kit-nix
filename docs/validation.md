@@ -48,7 +48,7 @@ unchanged. Local errors prove routing, not model support.
 - Authenticated providers, Copilot enterprise domains/model combinations, and
   Pi/OpenCode custom provider runtimes. Pi routes `openai`, `openai-codex`
   (best effort), `anthropic`, and `github-copilot` (Headroom Copilot login;
-  Claude/Gemini ids may not speak Responses). OpenCode routes `openai`, `anthropic`,
+  native client, token swap). OpenCode routes `openai`, `anthropic`,
   `opencode` (Zen/free, best effort), and `github-copilot`. Other providers keep
   their normal routes.
 - Compression quality under concurrent load.

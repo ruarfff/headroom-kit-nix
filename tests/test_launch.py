@@ -283,6 +283,22 @@ class LauncherTests(unittest.TestCase):
             plugin["options"]["endpoint"], f"http://127.0.0.1:{self.cfg['opencodePort']}/v1"
         )
 
+    def test_opencode_github_copilot_requires_headroom_login(self) -> None:
+        result = self.run_launcher(
+            "run",
+            "--model",
+            "github-copilot/gpt-4.1",
+            command="opencode-headroom",
+            mode="auth-failure",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("copilot-auth login", result.stderr)
+        self.assertFalse(any(e["event"] == "proxy-start" for e in self.events()))
+        agents = [e for e in self.events() if e["event"] == "agent"]
+        self.assertTrue(agents)
+        self.assertTrue(all(e["args"] == ["--version"] for e in agents))
+        self.assertTrue(all("OPENCODE_CONFIG_CONTENT" not in e.get("env", {}) for e in agents))
+
     def test_opencode_private_server_and_config_overlay(self) -> None:
         config = self.root / "opencode.jsonc"
         original = b'// Keep preferences\n{"model":"openai/test-only"}\n'

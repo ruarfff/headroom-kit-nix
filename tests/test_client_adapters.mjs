@@ -24,7 +24,7 @@ test("Pi uses each API's base path without replacing credentials or models", () 
   }
 });
 
-test("Pi sends github-copilot at the Copilot proxy as an OpenAI Responses client", () => {
+test("Pi sends github-copilot at the Copilot proxy with a Headroom placeholder token", () => {
   const previous = process.env.HEADROOM_KIT_ENDPOINT;
   const previousCopilot = process.env.HEADROOM_KIT_COPILOT_ENDPOINT;
   process.env.HEADROOM_KIT_ENDPOINT = "http://127.0.0.1:8790/v1";
@@ -88,7 +88,7 @@ test("OpenCode overrides final endpoints and disables model WebSockets", async (
   }
 });
 
-test("OpenCode sends github-copilot at the Copilot proxy", async () => {
+test("OpenCode sends github-copilot at the Copilot proxy with a Headroom placeholder token", async () => {
   const endpoint = "http://127.0.0.1:8791/v1";
   const copilot = "http://127.0.0.1:8787/v1";
   const records = ["openai", "github-copilot", "other"].map((id) => ({
