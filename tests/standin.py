@@ -63,10 +63,11 @@ def run_agent(name: str) -> int:
         tty=os.isatty(0),
         env={
             k: os.environ[k]
-            for k in (
-                "COPILOT_PROVIDER_TYPE",
-                "COPILOT_PROVIDER_BASE_URL",
-                "COPILOT_PROVIDER_WIRE_API",
+            for k in os.environ
+            if k.startswith("COPILOT_PROVIDER_")
+            or k
+            in (
+                "COPILOT_API_URL",
                 "COPILOT_MODEL",
                 "HEADROOM_KIT_ENDPOINT",
                 "HEADROOM_KIT_COPILOT_ENDPOINT",
@@ -74,7 +75,6 @@ def run_agent(name: str) -> int:
                 "VSCODE_IPC_HOOK_CLI",
                 "VSCODE_PORTABLE",
             )
-            if k in os.environ
         },
     )
     if name == "opencode" and sys.argv[1:] == ["--version"]:
@@ -100,9 +100,7 @@ def run_agent(name: str) -> int:
 
 
 def client_traffic(name: str) -> None:
-    endpoint = os.environ.get("COPILOT_PROVIDER_BASE_URL") or os.environ.get(
-        "HEADROOM_KIT_ENDPOINT"
-    )
+    endpoint = os.environ.get("COPILOT_API_URL") or os.environ.get("HEADROOM_KIT_ENDPOINT")
     if name == "codex":
         endpoint = next(
             arg.split("=", 1)[1].strip('"')

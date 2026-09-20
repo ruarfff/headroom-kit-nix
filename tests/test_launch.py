@@ -869,19 +869,68 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(event["env"]["HEADROOM_BEACON"], "off")
         self.assertEqual(event["env"]["HEADROOM_OUTPUT_SHAPER"], "off")
 
-    def test_copilot_subscription_responses_and_model_unchanged(self) -> None:
-        result = self.run_launcher(
-            "--model",
-            "chosen-model",
-            command="copilot-headroom",
-            env={"COPILOT_MODEL": "saved-model"},
+    def test_copilot_native_routing_preserves_model_selection(self) -> None:
+        for args in (
+            ["--model", "gemini-3.8-flash"],
+            ["--model=gpt-5.4"],
+            ["--model", "claude-sonnet-5"],
+            ["--model", "future-model"],
+            ["--model", "auto"],
+            [],
+            ["--", "literal --model=auto"],
+        ):
+            with self.subTest(args=args):
+                result = self.run_launcher(
+                    *args,
+                    command="copilot-headroom",
+                    env={"COPILOT_MODEL": "saved-model"},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                event = next(e for e in reversed(self.events()) if e["event"] == "agent")
+                self.assertEqual(event["args"], args)
+                self.assertEqual(
+                    {k: v for k, v in event["env"].items() if k.startswith("COPILOT_")},
+                    {
+                        "COPILOT_API_URL": f"http://127.0.0.1:{self.cfg['copilotPort']}",
+                        "COPILOT_MODEL": "saved-model",
+                    },
+                )
+                self.assertNotIn("fake-test-token", result.stdout + result.stderr)
+        starts = [e for e in self.events() if e["event"] == "proxy-start"]
+        self.assertEqual(len(starts), 1)
+        for flag in ("--openai-api-url", "--anthropic-api-url"):
+            self.assertEqual(
+                starts[0]["args"][starts[0]["args"].index(flag) + 1],
+                "https://api.githubcopilot.com",
+            )
+
+    def test_copilot_native_routing_removes_inherited_byok_settings(self) -> None:
+        inherited = dict.fromkeys(
+            (
+                "COPILOT_PROVIDER_TYPE",
+                "COPILOT_PROVIDER_BASE_URL",
+                "COPILOT_PROVIDER_API_KEY",
+                "COPILOT_PROVIDER_API_KEY_COMMAND",
+                "COPILOT_PROVIDER_BEARER_TOKEN",
+                "COPILOT_PROVIDER_WIRE_API",
+                "COPILOT_PROVIDER_TRANSPORT",
+                "COPILOT_PROVIDER_MODEL_ID",
+                "COPILOT_PROVIDER_WIRE_MODEL",
+                "COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
+                "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
+                "COPILOT_PROVIDER_HEADERS",
+                "COPILOT_PROVIDER_FUTURE_OPTION",
+            ),
+            "fake-byok-setting",
         )
+        inherited["COPILOT_API_URL"] = "https://elsewhere.example.invalid"
+        result = self.run_launcher(command="copilot-headroom", env=inherited)
         self.assertEqual(result.returncode, 0, result.stderr)
         event = next(e for e in self.events() if e["event"] == "agent")
-        self.assertEqual(event["args"], ["--model", "chosen-model"])
-        self.assertEqual(event["env"]["COPILOT_PROVIDER_WIRE_API"], "responses")
-        self.assertEqual(event["env"]["COPILOT_MODEL"], "saved-model")
-        self.assertNotIn("fake-test-token", result.stdout + result.stderr)
+        self.assertEqual(
+            {k: v for k, v in event["env"].items() if k.startswith("COPILOT_")},
+            {"COPILOT_API_URL": f"http://127.0.0.1:{self.cfg['copilotPort']}"},
+        )
 
     def test_copilot_instances_share_across_model_and_client_env(self) -> None:
         first = self.run_launcher("--model", "grok-4.6", command="copilot-headroom", mode="traffic")
