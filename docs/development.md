@@ -7,11 +7,11 @@ nix build "path:$PWD#headroom-kit"
 ./result/bin/codex-headroom
 ```
 
-Prefix other Kit commands with `./result/bin/` to use this build.
+Other commands are under `./result/bin/`.
 
 ## Checks
 
-Run from the repository root:
+From the repository root:
 
 ```sh
 nix develop
@@ -21,18 +21,18 @@ nix build .#headroom-kit --no-write-lock-file
 pre-commit run anti-slop-python --all-files
 ```
 
-The native flake check runs the unit suite, Ruff, Nix formatting, pre-commit config
-validation, and workflow lint. The pinned anti-slop hook runs separately because
-its first run downloads an environment. Keep any existing hook manager in place.
+`nix flake check` runs unit tests, Ruff, nixfmt, pre-commit config validation, and
+actionlint. The anti-slop hook is separate because the first run downloads an
+environment. Leave any existing hook manager in place.
 
-For a checkout with untracked files, use `"path:$PWD"` instead of `.` as the flake
-source, including `nix develop "path:$PWD"`. Include new Python files explicitly:
+Untracked files: use `"path:$PWD"` as the flake source, including
+`nix develop "path:$PWD"`. New Python files need an explicit `--files` list:
 
 ```sh
 pre-commit run anti-slop-python --files libexec/*.py tests/*.py .github/scripts/*.py
 ```
 
-For faster feedback inside the development shell:
+Faster loop inside the dev shell:
 
 ```sh
 python -m unittest discover -s tests -v
@@ -50,52 +50,38 @@ After building the aggregate package:
 python tests/runtime_smoke.py "$(readlink result)"
 ```
 
-This downloads Headroom 0.37.0 and checks real proxy readiness, routing arguments,
-output, settings preservation, shared lifetime, explicit stop, and the real JSONC
-writer. It also checks Copilot account pinning and refresh against a local token endpoint. It uses temporary
-state and a stand-in client, with fake credentials, no model requests, and no GUI
-launches. Add `--cache-dir /path/to/test-cache` to reuse a dedicated download cache.
+Downloads Headroom 0.37.0 and checks real proxy start/reuse/stop, routing args,
+settings preservation, and Copilot token refresh against a local endpoint. Fake
+credentials, no model requests, no GUI. `--cache-dir` reuses a download cache.
+This is separate from Nix checks because native wheels have to work at runtime.
+See [validation](validation.md).
 
-The smoke test is separate from Nix checks: downloaded native wheels must also
-work at runtime. See [validation status](validation.md).
-
-With Pi and OpenCode v2 installed, check their real HTTP clients on macOS:
+Needs Pi and OpenCode v2; temporary homes, fake keys, local endpoints. The macOS
+sandbox blocks the network. Proves routing, not authenticated models:
 
 ```sh
 python tests/agent_routing_smoke.py
 ```
 
-This uses temporary homes, fake API keys, and local endpoints. A macOS sandbox
-blocks external connections. It checks both providers, conflicting endpoint
-settings, ordinary/wildcard forward proxies, and configuration preservation.
-Local error responses establish routing, not authenticated model support.
-
-With Codex, Pi, and OpenCode installed, check shared concurrent client traffic:
+Needs Codex, Pi, and OpenCode. Real launchers against a managed fake proxy; each
+pair sends a distinct prompt. OpenCode first-use setup runs first:
 
 ```sh
 python tests/shared_agent_smoke.py
 ```
 
-This uses the real launchers and a managed fake proxy with instance IDs and request
-counters. Each pair of real clients sends a distinct prompt. The macOS sandbox
-blocks external connections; responses are local test errors. OpenCode's isolated
-first-use setup runs before the concurrent pair. No authenticated model support
-or compression quality is established.
-
-To check live reuse with real providers, install the Codex, Copilot, Pi, and
-OpenCode v2 CLIs first. Missing tools fail before any proxy starts. This check
-does not launch VS Code or the Codex app.
+Live reuse against real providers with your existing sign-in. Needs the Codex,
+Copilot, Pi, and OpenCode v2 CLIs. Does not launch VS Code or the Codex app:
 
 ```sh
 python tests/qa_share.py
 ```
 
-The script uses this checkout's `libexec`, throwaway ports, and a short prompt per
-CLI. The second launch must print `Reusing Headroom`. Copilot's second launch also
-changes model, reasoning effort, and client env. A failed agent is reported and the
-rest still run. Provider quota after a shared proxy is not a Kit failure.
-This talks to real providers and uses your existing sign-in.
-Interruptions can leave a proxy; the script stops its ports on the way out.
+Uses this checkout's `libexec`, throwaway ports, and a short prompt per CLI. The
+second launch must print `Reusing Headroom`. Copilot's second launch also changes
+model, reasoning effort, and client env. A failed agent is reported and the rest
+continue. Quota after a shared proxy is not a Kit failure. The script stops its
+ports on the way out.
 
 ## Code and test boundaries
 
@@ -109,28 +95,22 @@ libexec/
 └── opencode-plugin/ OpenCode v2 request routing
 ```
 
-Tests use explicit stand-ins and temporary homes. They need loopback access plus
-uv and curl from the development shell. The uv regression
-uses a cold cache and local package index; curl checks local direct/proxy routing.
-No real credentials or external endpoints are used. Release tests write no tags.
+Tests use stand-ins and temporary homes. They need loopback, plus uv and curl from
+the dev shell. The uv regression uses a cold cache and a local package index; curl
+checks local direct/proxy routing. No real credentials or external endpoints.
+Release tests write no tags.
 
 ## Releases
 
 The [workflow](../.github/workflows/tag.yml) checks Linux and Apple Silicon macOS.
-Only a successful push to `main` can publish a release; pull requests run checks
-only. The release job alone has write permission.
+PRs run checks only. A successful push to `main` can publish; only the release job
+has write permission.
 
-The first tag is `v0.1.0`; later tags increment the highest stable tag's patch.
-Releases follow changes to `flake.nix`, `flake.lock`, `libexec/`, or `nix/`.
-The comparison uses the last reachable stable release, so changes from a failed
-push remain eligible. Documentation, skills, license, test, or CI-only changes
-do not create a new tag after the first release.
+First tag is `v0.1.0`; later tags bump the highest stable patch. A tag is created
+when `flake.nix`, `flake.lock`, `libexec/`, or `nix/` changed since the last
+reachable stable release. Docs, skills, license, tests, and CI do not cut a tag.
 
-Each tag gets a GitHub Release with generated notes. Rerunning the same commit
-reuses its stable tag and can finish a failed release publication. Existing
-releases are left alone; runs skip publication if `main` has advanced.
-
-An authorized manual minor/major tag becomes the base for later patch tags.
-Prereleases and malformed tags are ignored. Kit tags do not change the Headroom
-runtime pin. Before enabling releases, verify Actions and permissions to push
-`v*` tags and create releases. The workflow installs or activates no profiles.
+Each tag gets a GitHub Release with generated notes. Rerun the same commit to
+finish a failed publish; skip if `main` has moved on. A manual minor/major tag
+becomes the next patch base. Prereleases and malformed tags are ignored. Kit tags
+do not change the Headroom runtime pin.

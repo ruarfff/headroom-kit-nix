@@ -1,27 +1,23 @@
 # Configuration
 
-Start with the [quick setup](../README.md#quick-start). All settings are optional;
+Start with the [quick setup](../README.md#quick-start). Settings are optional;
 environment variables override Nix options for one launch.
 
 ## Nix integration
 
-Add the input shown in the [README](../README.md#install-in-your-nix-configuration),
-then choose the package option your configuration uses:
+Add the [README input](../README.md#install-in-your-nix-configuration). Pass `inputs`
+through `specialArgs` (NixOS/nix-darwin), `extraSpecialArgs` (standalone Home Manager),
+or `home-manager.extraSpecialArgs` (Home Manager as a system module).
 
 | Setup | Package option |
 | --- | --- |
 | NixOS or nix-darwin | `environment.systemPackages` |
-| Home Manager | `home.packages` or the Kit module below |
-
-These modules receive `inputs` through your existing module arguments:
-`specialArgs` for NixOS/nix-darwin, `extraSpecialArgs` for standalone Home Manager,
-or `home-manager.extraSpecialArgs` when Home Manager is a system module.
+| Home Manager | `home.packages` or the Kit module |
 
 ### Home Manager
 
-The module installs `headroom`, the `headroom-kit` control command,
-`codex-headroom`, and `copilot-headroom` by default.
-To choose wrappers, set `wrappers` explicitly:
+Default wrappers: `headroom`, `headroom-kit`, `codex-headroom`, and `copilot-headroom`.
+Pick others with `wrappers`; `headroom` and the control command are always included.
 
 ```nix
 { inputs, ... }:
@@ -36,12 +32,11 @@ To choose wrappers, set `wrappers` explicitly:
 }
 ```
 
-`headroom` and the control command are always included. The module installs packages;
-wrappers start their shared runtime on demand.
+Wrappers start their runtime on demand.
 
 ### Without the Kit module
 
-Select individual packages or `kit.headroom-kit` for all eight commands:
+Select individual packages, or `kit.headroom-kit` for all eight commands:
 
 ```nix
 { inputs, pkgs, ... }:
@@ -59,29 +54,27 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-Headroom defaults to **0.37.0**. Select an exact stable version or opt into latest:
+Headroom defaults to **0.37.0**:
 
 ```sh
 HEADROOM_VERSION=0.37.0 codex-headroom
 HEADROOM_VERSION=latest codex-headroom
 ```
 
-Exact versions fail without fallback. `latest` refreshes and upgrades Headroom,
-excludes prereleases, and prints the resolved version. A Kit release tag selects
-the launcher code; `HEADROOM_VERSION` selects the runtime. Neither pins every
-Python dependency or optional download.
+Exact versions fail without fallback. `latest` refreshes, skips prereleases, and
+prints the resolved version. A Kit tag pins launcher code; `HEADROOM_VERSION` pins
+the Headroom runtime. Neither locks every Python dependency.
 
-uv uses the Nix Python in an isolated tool environment. It preserves **user and
-system package-index configuration and authentication policy**, ignores project
-`uv.toml`/`pyproject.toml`, and disables Python downloads and dotenv loading.
-Explicit uv environment settings still apply. Keep credentials in your runtime
-credential store, outside Nix and source control.
+uv uses Nix Python in an isolated tool environment. It keeps your user/system index
+and auth, ignores project `uv.toml`/`pyproject.toml`, and will not download Python
+or load dotenv. Explicit uv env still applies. Keep credentials out of Nix and
+source control.
 See [uv configuration](https://docs.astral.sh/uv/concepts/configuration-files/).
 
 ## Options
 
-Home Manager paths below are under `programs.headroom-kit`. The last column names
-arguments to `lib.mkHeadroomKit`.
+Home Manager paths are under `programs.headroom-kit`. The last column is
+`lib.mkHeadroomKit`.
 
 | Environment variable | Default | Home Manager | Package argument |
 | --- | --- | --- | --- |
@@ -102,11 +95,11 @@ arguments to `lib.mkHeadroomKit`.
 | `HEADROOM_VSCODE_USER_DATA_DIR` | [Isolated profile](usage.md#copilot-in-vs-code) | `vscode.userDataDir` | `vscodeUserDataDir` |
 | `HEADROOM_VSCODE_EXTENSIONS_DIR` | Existing channel extensions | `vscode.extensionsDir` | `vscodeExtensionsDir` |
 
-Ports must be 1–65535. Codex and Copilot need different ports. Copilot CLI and
-the editor share a port when they use the same Headroom OAuth credential. Pi and OpenCode each need
-a separate port from every other wrapper. The startup timeout is a
-positive integer in seconds, measured after runtime resolution.
+Ports are 1–65535. Codex and Copilot need different ports. Copilot CLI and the
+editor can share a port when they share the Headroom OAuth credential. Pi and
+OpenCode each need their own port. Startup timeout is seconds after runtime
+resolution.
 
-Executable values are names on `PATH` or single paths, never shell commands.
-Quote paths with spaces. The app path must be a macOS `.app` bundle.
-Unset an environment variable to use its default; an empty value is an error.
+Executables are names on `PATH` or single paths, never shell commands. Quote paths
+with spaces. The app path must be a macOS `.app` bundle. Unset an environment
+variable to use the default; empty is an error.

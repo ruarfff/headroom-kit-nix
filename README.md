@@ -6,7 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
-Normal launches keep their settings. Kit installs no agents or system services.
+Normal launches keep their settings. Kit does not install agents or system services.
 
 ```mermaid
 flowchart LR
@@ -16,22 +16,19 @@ flowchart LR
 ## Quick start
 
 You need **Nix with flakes** and an installed, signed-in coding agent.
-Runtime checks cover Apple Silicon macOS; [Linux runtime is unverified](docs/validation.md).
-
-Run the `v0.1.1` release:
+Runtime checks cover Apple Silicon macOS; [Linux is unverified](docs/validation.md).
 
 ```sh
 nix run github:ruarfff/headroom-kit-nix/v0.1.1#codex-headroom
 ```
 
 The first launch downloads Headroom 0.37.0 using your uv package-index settings.
-See [versions and indexes](docs/configuration.md#versions-and-package-indexes) to
-change them. For Copilot, follow the
-[authorization steps](docs/usage.md#copilot-cli).
+[Change version or index](docs/configuration.md#versions-and-package-indexes).
+For Copilot, [authorize Headroom](docs/usage.md#copilot-cli) first.
 
 ## Install in your Nix configuration
 
-Pin the release in your flake:
+Pin the release:
 
 ```nix
 inputs.headroom-kit.url = "github:ruarfff/headroom-kit-nix/v0.1.1";
@@ -47,14 +44,11 @@ In a Home Manager module that receives `inputs`:
 }
 ```
 
-Build and activate through your usual workflow. This installs `headroom`,
-`headroom-kit`, `codex-headroom`, and `copilot-headroom`.
-See [configuration](docs/configuration.md#nix-integration) to add Pi, OpenCode, or
-GUI wrappers, use NixOS/nix-darwin without Home Manager, or pass module arguments.
+That installs `headroom`, `headroom-kit`, `codex-headroom`, and `copilot-headroom`.
+[Configuration](docs/configuration.md#nix-integration) covers Pi, OpenCode, GUI wrappers,
+and NixOS/nix-darwin without Home Manager.
 
 ## Choose a command
-
-After installation, run these from your project:
 
 | Command | Setup |
 | --- | --- |
@@ -67,9 +61,9 @@ After installation, run these from your project:
 | `headroom` | Run the Headroom CLI directly |
 | `headroom-kit status` / `headroom-kit stop <port>` | Inspect or stop shared proxies |
 
-Compatible sessions share a proxy that survives client and
-terminal exit. Explicit stop interrupts every attached client. See
-[usage and migration](docs/usage.md#proxy-lifetime) before upgrading from `v0.1.0`.
+Compatible sessions share a proxy that outlives the client. `headroom-kit stop`
+interrupts everyone on that port. See [proxy lifetime](docs/usage.md#proxy-lifetime)
+before upgrading from `v0.1.0`.
 
 ## Set up with an agent
 
