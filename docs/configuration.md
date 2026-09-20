@@ -102,4 +102,35 @@ resolution.
 
 Executables are names on `PATH` or single paths, never shell commands. Quote paths
 with spaces. The app path must be a macOS `.app` bundle. Unset an environment
-variable to use the default; empty is an error.
+variable to use the default; empty is an error for the Kit options above.
+
+## Local metrics and storage
+
+Every managed proxy defaults to persistent state and local telemetry. These native
+Headroom environment settings pass through Kit; they do not need Nix options:
+
+| Environment variable | Managed proxy default |
+| --- | --- |
+| `HEADROOM_STATELESS` | Unset; persistence enabled. Set `1` to opt out. |
+| `HEADROOM_TELEMETRY` | `on`; set `off` to disable local telemetry. |
+| `HEADROOM_WORKSPACE_DIR` | `~/.headroom` |
+| `HEADROOM_SAVINGS_PATH` | `<workspace>/headroom-kit/<port>/proxy_savings.json` |
+| `HEADROOM_SAVINGS_EVENTS_PATH` | `<workspace>/savings_events.jsonl` |
+
+Empty or whitespace-only path overrides use the defaults. Kit expands `~` and
+resolves relative storage paths from the launch directory before detaching the
+proxy, whose working directory is `/`.
+
+Lifetime counters use a separate file per port because Headroom rewrites that
+file. If you set `HEADROOM_SAVINGS_PATH`, give concurrent proxies distinct files
+or one process can overwrite another's counters. The event ledger supports
+concurrent writers and stays at Headroom's shared default location, so
+`headroom savings` works without extra arguments. For a custom workspace or
+ledger, use the same environment settings when running the report.
+
+Storage paths, telemetry, and stateless settings are part of proxy compatibility,
+including Copilot. Changed settings require `headroom-kit stop <port>` and a new
+launch; Kit does not replace an incompatible running proxy.
+
+See [metrics and retention](usage.md#metrics-and-retention) for report scope and
+upgrade limits.

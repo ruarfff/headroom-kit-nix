@@ -859,8 +859,6 @@ class LauncherTests(unittest.TestCase):
             "--lossless",
             "--disable-kompress",
             "--disable-kompress-fallback",
-            "--stateless",
-            "--no-telemetry",
             "--no-cache",
             "--no-rate-limit",
             "--no-learn",
@@ -868,6 +866,97 @@ class LauncherTests(unittest.TestCase):
             self.assertIn(arg, event["args"])
         self.assertEqual(event["env"]["HEADROOM_BEACON"], "off")
         self.assertEqual(event["env"]["HEADROOM_OUTPUT_SHAPER"], "off")
+
+    def test_persistent_metrics_defaults_for_every_proxy(self) -> None:
+        for command in (
+            "codex-headroom",
+            "copilot-headroom",
+            "copilot-vscode-headroom",
+            "pi-headroom",
+            "opencode-headroom",
+        ):
+            with self.subTest(command=command):
+                result = self.run_launcher(command=command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        starts = [e for e in self.events() if e["event"] == "proxy-start"]
+        self.assertEqual(len(starts), 5)
+        paths = set()
+        for event in starts:
+            env = event["env"]
+            port = event["args"][event["args"].index("--port") + 1]
+            expected = self.root / ".headroom/headroom-kit" / port / "proxy_savings.json"
+            self.assertEqual(env["HEADROOM_SAVINGS_PATH"], str(expected))
+            paths.add(env["HEADROOM_SAVINGS_PATH"])
+            self.assertEqual(env["HEADROOM_WORKSPACE_DIR"], str(self.root / ".headroom"))
+            self.assertEqual(
+                env["HEADROOM_SAVINGS_EVENTS_PATH"],
+                str(self.root / ".headroom/savings_events.jsonl"),
+            )
+            self.assertEqual(env["HEADROOM_TELEMETRY"], "on")
+            self.assertIsNone(env["HEADROOM_STATELESS"])
+            for key in ("HEADROOM_BEACON", "HEADROOM_LOG_MESSAGES"):
+                self.assertEqual(env[key], "off")
+            self.assertIn("--no-learn", event["args"])
+            for flag in ("--stateless", "--telemetry", "--no-telemetry"):
+                self.assertNotIn(flag, event["args"])
+        self.assertEqual(len(paths), 5)
+
+    def test_native_metrics_overrides_and_reuse(self) -> None:
+        overrides = {
+            "HEADROOM_STATELESS": "1",
+            "HEADROOM_TELEMETRY": "off",
+            "HEADROOM_WORKSPACE_DIR": "workspace with spaces",
+            "HEADROOM_SAVINGS_PATH": "counters/custom.json",
+            "HEADROOM_SAVINGS_EVENTS_PATH": "~/events/custom.jsonl",
+        }
+        for command in ("codex-headroom", "copilot-headroom", "pi-headroom", "opencode-headroom"):
+            with self.subTest(command=command):
+                self.stop_proxies()
+                result = self.run_launcher(command=command, env=overrides)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                event = next(e for e in reversed(self.events()) if e["event"] == "proxy-start")
+                expected = dict(overrides)
+                for key in (
+                    "HEADROOM_WORKSPACE_DIR",
+                    "HEADROOM_SAVINGS_PATH",
+                    "HEADROOM_SAVINGS_EVENTS_PATH",
+                ):
+                    expected[key] = str(self.root / overrides[key].removeprefix("~/"))
+                for key, value in expected.items():
+                    self.assertEqual(event["env"][key], value)
+                again = self.run_launcher(command=command, env=expected)
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertIn("Reusing", again.stderr)
+                for key in overrides:
+                    changed = dict(overrides, **{key: "0" if key == "HEADROOM_STATELESS" else "on"})
+                    result = self.run_launcher(command=command, env=changed)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("incompatible managed proxy", result.stderr)
+
+    def test_empty_paths_use_defaults_and_workspace_selects_storage(self) -> None:
+        paths = ("HEADROOM_WORKSPACE_DIR", "HEADROOM_SAVINGS_PATH", "HEADROOM_SAVINGS_EVENTS_PATH")
+        for workspace in ("", "  ", "~/custom workspace", "relative workspace"):
+            with self.subTest(workspace=workspace):
+                self.stop_proxies()
+                overrides = dict.fromkeys(paths, " ")
+                overrides["HEADROOM_WORKSPACE_DIR"] = workspace
+                result = self.run_launcher(env=overrides)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                event = next(e for e in reversed(self.events()) if e["event"] == "proxy-start")
+                root = self.root / (
+                    workspace.removeprefix("~/") if workspace.strip() else ".headroom"
+                )
+                self.assertEqual(event["env"]["HEADROOM_WORKSPACE_DIR"], str(root))
+                self.assertEqual(
+                    event["env"]["HEADROOM_SAVINGS_PATH"],
+                    str(root / "headroom-kit" / str(self.cfg["codexPort"]) / "proxy_savings.json"),
+                )
+                self.assertEqual(
+                    event["env"]["HEADROOM_SAVINGS_EVENTS_PATH"], str(root / "savings_events.jsonl")
+                )
+                again = self.run_launcher(env={"HEADROOM_WORKSPACE_DIR": str(root)})
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertIn("Reusing", again.stderr)
 
     def test_copilot_native_routing_preserves_model_selection(self) -> None:
         for args in (

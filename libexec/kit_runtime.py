@@ -136,11 +136,11 @@ def executable(value: str | None, variable: str) -> str:
     return os.path.abspath(found)
 
 
-def privacy(env: Mapping[str, str], local_stats: bool = False) -> dict[str, str]:
+def privacy(env: Mapping[str, str]) -> dict[str, str]:
     result = dict(env)
+    result.setdefault("HEADROOM_TELEMETRY", "on")
     result.update(
         HEADROOM_BEACON="off",
-        HEADROOM_TELEMETRY="on" if local_stats else "off",
         HEADROOM_LOG_MESSAGES="off",
         HEADROOM_CODEX_WIRE_DEBUG="off",
         DO_NOT_TRACK="1",

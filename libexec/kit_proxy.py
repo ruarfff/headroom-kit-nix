@@ -23,6 +23,14 @@ from pathlib import Path
 
 from kit_runtime import Config, Json, KitError, privacy, say, terminate
 
+METRICS_ENV = (
+    "HEADROOM_STATELESS",
+    "HEADROOM_TELEMETRY",
+    "HEADROOM_WORKSPACE_DIR",
+    "HEADROOM_SAVINGS_PATH",
+    "HEADROOM_SAVINGS_EVENTS_PATH",
+)
+
 
 @dataclass(frozen=True)
 class CopilotAuth:
@@ -74,19 +82,28 @@ def locked(path: Path, message: str, timeout: float = 0) -> Iterator[None]:
         yield
 
 
-def proxy_environment(kind: str) -> dict[str, str]:
+def proxy_environment(kind: str, port: int) -> dict[str, str]:
     # Inherited tuning must not defeat the tested policy or change the upstream.
     blocked = {"OPENAI_BASE_URL", "ANTHROPIC_BASE_URL", "PYTHONPATH", "PYTHONHOME"}
     env = {
         key: value
         for key, value in os.environ.items()
         if key not in blocked
-        and not key.startswith(("HEADROOM_", "GITHUB_COPILOT_"))
+        and (key in METRICS_ENV or not key.startswith(("HEADROOM_", "GITHUB_COPILOT_")))
         and not key.endswith("TARGET_API_URL")
     }
-    env = privacy(env, local_stats=kind == "copilot")
+    env = privacy(env)
+    # Resolve storage before the detached owner changes its working directory to /.
+    workspace = Path(env.get("HEADROOM_WORKSPACE_DIR", "").strip() or "~/.headroom")
+    workspace = workspace.expanduser().resolve()
+    for key, default in (
+        ("HEADROOM_WORKSPACE_DIR", workspace),
+        ("HEADROOM_SAVINGS_PATH", workspace / "headroom-kit" / str(port) / "proxy_savings.json"),
+        ("HEADROOM_SAVINGS_EVENTS_PATH", workspace / "savings_events.jsonl"),
+    ):
+        env[key] = str(Path(env.get(key, "").strip() or default).expanduser().resolve())
     # Headroom's allocator re-exec would discard the inherited-socket/auth adapter.
-    env.update(HEADROOM_AGENT_TYPE=kind, HEADROOM_STATELESS="1", HEADROOM_MALLOC_TUNING="0")
+    env.update(HEADROOM_AGENT_TYPE=kind, HEADROOM_MALLOC_TUNING="0")
     if sys.platform == "darwin":
         env.setdefault("MallocAggressiveMadvise", "1")
         env.setdefault("MallocLargeCache", "0")
@@ -150,7 +167,6 @@ def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
         "127.0.0.1",
         "--port",
         str(port),
-        "--stateless",
         "--no-learn",
     ]
     if kind != "copilot":
@@ -160,12 +176,11 @@ def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
             "--lossless",
             "--disable-kompress",
             "--disable-kompress-fallback",
-            "--no-telemetry",
             "--no-cache",
             "--no-rate-limit",
         ]
     else:
-        args += ["--openai-api-url", upstream, "--anthropic-api-url", upstream, "--telemetry"]
+        args += ["--openai-api-url", upstream, "--anthropic-api-url", upstream]
     return args
 
 
@@ -213,10 +228,12 @@ def identity(version: str, kind: str, env: dict[str, str], auth: CopilotAuth | N
         )
     ).hexdigest()
     # Copilot clients share one subscription proxy. Model, interpreter, and pane env
-    # must not mint a new identity. Other agents still hash upstream credentials.
+    # must not mint a new identity. Metrics settings still apply to every proxy.
+    # Other agents also hash upstream credentials.
     payload: list[Json] = [version, implementation, kind]
     if kind == "copilot":
         payload.append([auth.api_url, auth.refresh_oauth_token] if auth else None)
+        payload.append({key: env[key] for key in METRICS_ENV if key in env})
     else:
         payload.append(
             {
@@ -236,7 +253,7 @@ def identity(version: str, kind: str, env: dict[str, str], auth: CopilotAuth | N
 def ensure_proxy(
     cfg: Config, version: str, kind: str, port: int, auth: CopilotAuth | None = None
 ) -> str:
-    env = proxy_environment(kind)
+    env = proxy_environment(kind, port)
     if auth and not auth.refresh_oauth_token:
         raise KitError("Shared Copilot requires reusable OAuth. Run `headroom copilot-auth login`.")
     fingerprint = identity(version, kind, env, auth)

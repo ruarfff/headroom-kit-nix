@@ -51,8 +51,12 @@ python tests/runtime_smoke.py "$(readlink result)"
 ```
 
 Downloads Headroom 0.37.0 and checks real proxy start/reuse/stop, routing args,
-settings preservation, and Copilot token refresh against a local endpoint. Fake
-credentials, no model requests, no GUI. `--cache-dir` reuses a download cache.
+settings preservation, and Copilot token refresh against a local endpoint. The
+metrics check injects synthetic requests into two independent real proxies,
+checks the shared savings report, then verifies graceful flush and restart with
+separate counter files. It also checks telemetry opt-out and stateless operation.
+All storage is temporary. Fake credentials, no model requests, no GUI.
+`--cache-dir` reuses a download cache.
 This is separate from Nix checks because native wheels have to work at runtime.
 See [validation](validation.md).
 
