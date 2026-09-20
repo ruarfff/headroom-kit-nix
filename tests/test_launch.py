@@ -21,10 +21,17 @@ kit_proxy = importlib.import_module("kit_proxy")
 STANDIN = Path(__file__).with_name("standin.py").read_text()
 
 
-def free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return listener.getsockname()[1]
+def unique_ports(count: int) -> list[int]:
+    listeners = []
+    try:
+        for _ in range(count):
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            listeners.append(listener)
+        return [listener.getsockname()[1] for listener in listeners]
+    finally:
+        for listener in listeners:
+            listener.close()
 
 
 class LauncherTests(unittest.TestCase):
@@ -50,21 +57,22 @@ class LauncherTests(unittest.TestCase):
         runtime = self.root / "runtime python"
         runtime.write_text(f"#!{sys.executable}\n" + STANDIN)
         runtime.chmod(0o755)
+        codex_port, copilot_port, pi_port, opencode_port, vscode_port = unique_ports(5)
         self.cfg = {
             "version": "0.37.0",
             "startupTimeout": 2,
             "codexExecutable": "codex",
-            "codexPort": free_port(),
+            "codexPort": codex_port,
             "codexAppPath": None,
             "copilotExecutable": "copilot",
-            "copilotPort": free_port(),
+            "copilotPort": copilot_port,
             "piExecutable": "pi",
-            "piPort": free_port(),
+            "piPort": pi_port,
             "opencodeExecutable": "opencode",
-            "opencodePort": free_port(),
+            "opencodePort": opencode_port,
             "vscodeChannel": "insiders",
             "vscodeExecutable": None,
-            "vscodePort": free_port(),
+            "vscodePort": vscode_port,
             "vscodeUserDataDir": None,
             "vscodeExtensionsDir": None,
             "uv": str(self.bin / "uvx"),

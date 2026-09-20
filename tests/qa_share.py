@@ -39,10 +39,17 @@ def missing_tools() -> list[str]:
     return missing
 
 
-def free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return listener.getsockname()[1]
+def unique_ports(count: int) -> list[int]:
+    listeners = []
+    try:
+        for _ in range(count):
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            listeners.append(listener)
+        return [listener.getsockname()[1] for listener in listeners]
+    finally:
+        for listener in listeners:
+            listener.close()
 
 
 def kit_lines(stderr: str) -> list[str]:
@@ -217,7 +224,7 @@ def main() -> int:
         return 1
     python = python313()
     assert python is not None
-    ports = {name: free_port() for name in (*CLIS, "vscode")}
+    ports = dict(zip((*CLIS, "vscode"), unique_ports(len(CLIS) + 1), strict=True))
     with tempfile.TemporaryDirectory(prefix="headroom-kit-qa-") as temporary:
         cwd = Path(temporary).resolve()
         defaults = cwd / "defaults.json"
