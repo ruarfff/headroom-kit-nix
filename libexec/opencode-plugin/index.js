@@ -3,6 +3,7 @@ export default {
   id: "headroom-kit",
   async setup(ctx) {
     const providers = new Set(["openai", "anthropic", "opencode"]);
+    if (ctx.options.copilot) providers.add("github-copilot");
     await ctx.catalog.transform((catalog) => {
       for (const { provider, models } of catalog.provider.list()) {
         if (!providers.has(provider.id)) continue;
@@ -14,6 +15,11 @@ export default {
       }
     });
     await ctx.session.hook("model.request", (event) => {
+      if (event.model.providerID === "github-copilot" && ctx.options.copilot) {
+        event.baseURL = ctx.options.copilot;
+        if (event.headers) event.headers.authorization = "Bearer headroom-kit";
+        return;
+      }
       if (providers.has(event.model.providerID)) event.baseURL = ctx.options.endpoint;
     });
   },

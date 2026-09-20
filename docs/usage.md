@@ -47,6 +47,8 @@ Pi's normal setup, then launch from your project:
 pi-headroom --provider openai --model <model-id>
 # ChatGPT Codex login (best effort):
 pi-headroom --provider openai-codex --model gpt-5.6-luna
+# GitHub Copilot through Headroom:
+pi-headroom --provider github-copilot --model <model-id>
 # Or use Anthropic:
 pi-headroom --provider anthropic --model <model-id>
 ```
@@ -55,7 +57,10 @@ Pi keeps its config, catalog, extensions, skills, history, and sign-in. Kit load
 a local extension for this process only, including with `--no-extensions`. Resume
 and print-mode arguments pass through.
 Routed providers: `openai`, `openai-codex` (ChatGPT login, `/v1/codex/responses` at
-Headroom), and `anthropic`. Other providers keep their normal routes.
+Headroom), `anthropic`, and `github-copilot`. Copilot traffic uses the shared Copilot
+proxy and [Headroom's Copilot login](#copilot-cli), not Pi's. Claude/Gemini ids on
+Copilot may not speak Responses; that is the same limit as `copilot-headroom`.
+Other providers keep their normal routes.
 See [Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
 
 ## OpenCode v2
@@ -76,9 +81,12 @@ OpenCode 2.0.3 can fail concurrent private-server startup with a JSON bootstrap
 error, including without Kit. Start sessions one at a time if that happens.
 See [validation](validation.md#real-clients).
 
-A local plugin routes `openai`, `anthropic`, and `opencode` (Zen/free, best effort)
-through Headroom, including titles and compaction. It overrides per-model endpoints
-and uses HTTP streaming, not WebSockets. Other providers keep their normal routes.
+A local plugin routes `openai`, `anthropic`, `opencode` (Zen/free, best effort),
+and `github-copilot` through Headroom, including titles and compaction. It overrides
+per-model endpoints and uses HTTP streaming, not WebSockets. Copilot traffic uses
+the shared Copilot proxy and [Headroom's Copilot login](#copilot-cli), not OpenCode's.
+Claude/Gemini ids on Copilot may not speak Responses. Other providers keep their
+normal routes.
 Kit appends the plugin to the child's `OPENCODE_CONFIG_CONTENT` (must be a JSON
 object); existing inline settings stay. JSONC files are unchanged.
 See [OpenCode config](https://opencode.ai/v2/docs/config/) and
@@ -148,7 +156,7 @@ package installs: `nix run <kit-source>#headroom-kit -- status`, or add
 | Route | Default port | Share when |
 | --- | --- | --- |
 | Codex CLI/app | 8788 | Same configuration |
-| Copilot CLI/editor | 8787 | Same Headroom OAuth credential (model and client env do not matter) |
+| Copilot CLI/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential (model and client env do not matter) |
 | Pi | 8790 | Same configuration |
 | OpenCode | 8791 | Same configuration; each client still has its own OpenCode server |
 

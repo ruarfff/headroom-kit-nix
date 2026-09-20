@@ -272,7 +272,7 @@ def opencode_arguments(args: list[str]) -> list[str]:
     return with_options(args, ["--standalone"])
 
 
-def opencode_config(content: str, port: int) -> str:
+def opencode_config(content: str, port: int, copilot: str | None = None) -> str:
     try:
         config = json.loads(content)
         if not isinstance(config, dict) or not isinstance(config.get("plugins", []), list):
@@ -281,14 +281,59 @@ def opencode_config(content: str, port: int) -> str:
         raise KitError(
             "OPENCODE_CONFIG_CONTENT must be a JSON object with a plugins array if present. Use a JSONC file for comments."
         ) from None
+    options = {"endpoint": f"http://127.0.0.1:{port}/v1"}
+    if copilot:
+        options["copilot"] = copilot
     config["plugins"] = [
         *config.get("plugins", []),
         {
             "package": str(Path(__file__).with_name("opencode-plugin")),
-            "options": {"endpoint": f"http://127.0.0.1:{port}/v1"},
+            "options": options,
         },
     ]
     return json.dumps(config)
+
+
+def selected_provider(args: list[str]) -> str | None:
+    options = args[: args.index("--")] if "--" in args else args
+    provider = None
+    from_model = None
+    index = 0
+    while index < len(options):
+        arg = options[index]
+        if arg == "--provider" and index + 1 < len(options):
+            provider = options[index + 1]
+            index += 2
+            continue
+        if arg.startswith("--provider="):
+            provider = arg.removeprefix("--provider=")
+        elif arg == "--model" and index + 1 < len(options):
+            from_model = options[index + 1].split("/", 1)[0]
+            index += 2
+            continue
+        elif arg.startswith("--model="):
+            from_model = arg.removeprefix("--model=").split("/", 1)[0]
+        index += 1
+    return provider or from_model
+
+
+def copilot_endpoint(
+    cfg: Config,
+    version: str,
+    args: list[str],
+    authorize: Callable[[], CopilotAuth],
+    start_proxy: Proxy,
+) -> str | None:
+    provider = selected_provider(args)
+    if provider in {"openai", "openai-codex", "anthropic", "opencode"}:
+        return None
+    try:
+        auth = authorize()
+    except KitError:
+        if provider == "github-copilot":
+            raise
+        return None
+    return start_proxy(cfg, version, "copilot", cfg["copilotPort"], auth) + "/v1"
 
 
 def session(
@@ -307,16 +352,19 @@ def session(
     if command in ("pi-headroom", "opencode-headroom"):
         kind = command.removesuffix("-headroom")
         port = cfg[f"{kind}Port"]
+        copilot = copilot_endpoint(cfg, version, args, authorize, start_proxy)
         endpoint = start_proxy(cfg, version, kind, port, None)
         env = client_environment(os.environ)
         if kind == "pi":
             env["HEADROOM_KIT_ENDPOINT"] = endpoint + "/v1"
+            if copilot:
+                env["HEADROOM_KIT_COPILOT_ENDPOINT"] = copilot
             args = with_options(
                 args, ["--extension", str(Path(__file__).with_name("pi-extension.mjs"))]
             )
         else:
             env["OPENCODE_CONFIG_CONTENT"] = opencode_config(
-                env.get("OPENCODE_CONFIG_CONTENT", "{}"), port
+                env.get("OPENCODE_CONFIG_CONTENT", "{}"), port, copilot
             )
             args = opencode_arguments(args)
         return launch([agent, *args], env)
