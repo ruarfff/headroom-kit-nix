@@ -11,6 +11,7 @@ test("Pi uses each API's base path without replacing credentials or models", () 
     pi({ registerProvider: (id, config) => (overrides[id] = config) });
     assert.deepEqual(overrides, {
       openai: { baseUrl: "http://127.0.0.1:8790/v1" },
+      "openai-codex": { baseUrl: "http://127.0.0.1:8790/v1" },
       anthropic: { baseUrl: "http://127.0.0.1:8790" },
     });
   } finally {
@@ -21,7 +22,7 @@ test("Pi uses each API's base path without replacing credentials or models", () 
 
 test("OpenCode overrides final endpoints and disables model WebSockets", async () => {
   const endpoint = "http://127.0.0.1:8791/v1";
-  const records = ["openai", "anthropic", "other"].map((id) => ({
+  const records = ["openai", "anthropic", "opencode", "other"].map((id) => ({
     provider: { id },
     models: new Map([["model", { id: "model", websocket: true }]]),
   }));

@@ -71,9 +71,10 @@ agent configuration and authentication under their existing owner.
    `copilot-headroom --model <model-id>`. Let the user complete interactive sign-in.
    Shared Copilot requires reusable OAuth; routed editor requests use Headroom
    authorization even if the editor is signed into another account.
-   Pi and OpenCode currently route OpenAI and Anthropic API-key requests. Follow
-   their setup sections in `docs/usage.md`; other providers and subscriptions are
-   outside the validated scope. OpenCode requires v2 and uses a private server.
+   Pi and OpenCode route OpenAI and Anthropic API keys, plus Pi's ChatGPT Codex
+   login and OpenCode Zen/free models. Follow their setup sections in
+   `docs/usage.md`; other providers keep their normal routes. OpenCode requires
+   v2 and uses a private server.
 4. For requested runtime checks, use the isolated smoke test in
    `docs/development.md`. It uses no accounts or live GUI apps.
    Authenticated model requests and live GUI changes require explicit authorization.

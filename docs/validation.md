@@ -26,8 +26,9 @@ Coverage includes:
 - Continued requests from surviving clients and reuse by later launches.
 - Selected-instance stop, startup failure, dead proxies, abandoned sockets,
   stale/recycled PID metadata, and healthy foreign listeners.
-- Version, environment, and account separation; access-token rotation; caller
-  environment and normal routing preservation.
+- Version, environment, and account separation; Copilot reuse across model and
+  client environment; access-token rotation; caller environment and normal routing
+  preservation.
 - Repeated and simultaneous isolated editor windows, settings-path guards, and
   Settings Sync isolation. Editor processes are stand-ins.
 
@@ -90,8 +91,9 @@ Validation on 2026-09-16:
 
 - Linux runtime, live Codex app routing, isolated editor chat, and remote editor hosts.
 - Authenticated providers, Copilot enterprise domains/model combinations, and
-  Pi/OpenCode subscriptions or custom provider runtimes. Their `openai` and
-  `anthropic` providers are routed; other providers retain their normal routes.
+  Pi/OpenCode custom provider runtimes. Pi routes `openai`, `openai-codex`
+  (best effort), and `anthropic`. OpenCode routes `openai`, `anthropic`, and
+  `opencode` (Zen/free, best effort). Other providers retain their normal routes.
 - Compression quality and savings under representative concurrent workloads.
 - Consumer integration. Published revisions run Linux and macOS checks in the
   [release workflow](https://github.com/ruarfff/headroom-kit-nix/actions/workflows/tag.yml).
