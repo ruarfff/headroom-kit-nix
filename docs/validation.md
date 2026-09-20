@@ -72,13 +72,34 @@ Checks after the change: 78 Python tests, 4 client-adapter tests, native
 passed. The fake-token auth check covers Responses, Completions, Messages, and
 model discovery without contacting GitHub.
 
-## Pi and OpenCode Copilot routing
+## Pi Copilot routing
 
-The Pi **0.85.1** check returned `ok` for `claude-sonnet-5`, but did **not**
-increase the Copilot proxy counters. A loopback relay at the configured endpoint
-also received zero POSTs. This is a routing failure, tracked in
-[issue #5](https://github.com/ruarfff/headroom-kit-nix/issues/5), not a successful
-Headroom check.
+[Issue #5](https://github.com/ruarfff/headroom-kit-nix/issues/5) reproduced a bypass
+in Pi **0.85.1**: a Claude reply arrived without any Headroom requests. Pi applies
+an OAuth-derived URL after model endpoint overrides, and saved credentials take
+precedence over an extension's fallback API key.
+
+Kit now pins the URL and placeholder token in the native provider's auth result.
+It keeps the catalog, protocol handlers, and saved-login refresh. Copilot uses
+the proxy root: Anthropic adds `/v1/messages`, while OpenAI adds `/responses` or
+`/chat/completions`.
+
+`agent_routing_smoke.py --agent pi` passed 22 cases on Apple Silicon macOS:
+18 Copilot cases plus 4 OpenAI/Anthropic cases. Copilot covers Claude, Gemini,
+and GPT with unexpired saved OAuth, a saved API key, and no Pi login, under
+ordinary and wildcard proxy settings. The network sandbox permits only loopback.
+Each Copilot request carries the requested model and placeholder token to the
+Copilot endpoint; no requests reach the cache proxy, conflicting endpoint, or
+forward proxy. Config and fake credential files remain byte-for-byte unchanged.
+The OAuth case fails before the fix by attempting the token's endpoint.
+
+Live checks with Pi **0.85.1** and Headroom **0.37.0** passed for
+`claude-sonnet-5`, `gemini-3.8-flash`, and `gpt-5.4`: each replied `ok`, increased
+the Copilot counter by one, and appeared in per-model counters. The cache counter
+stayed at zero; later launches reused both proxies. Temporary proxies were stopped.
+This does not establish every model, enterprise domain, or interactive model switch.
+
+## OpenCode Copilot routing
 
 OpenCode's first live Copilot check was skipped because no models were connected.
 After login, OpenCode **2.0.11** listed Copilot models and Headroom's live OAuth
@@ -91,12 +112,17 @@ still returned `ok`, and neither endpoint received a request. This confirms a
 routing bypass, tracked in [issue #7](https://github.com/ruarfff/headroom-kit-nix/issues/7).
 The temporary proxies were stopped. Neither client adapter was changed for #4.
 
+During #5 checks, the combined local smoke test passed all 22 Pi cases, then failed
+OpenCode 2.0.11's OpenAI case. Its plugin reported an undefined `ctx.catalog` at
+`ctx.catalog.transform`; requests reached the conflicting endpoint instead of
+Headroom. The OpenCode adapter is unchanged. This broader plugin failure is also
+tracked in #7; the current combined smoke test does not pass.
+
 ## Remaining limits
 
 Follow-up work is tracked in issues, not implied by passing checks:
 
-- [#5](https://github.com/ruarfff/headroom-kit-nix/issues/5) and
-  [#7](https://github.com/ruarfff/headroom-kit-nix/issues/7): Pi/OpenCode Copilot bypasses.
+- [#7](https://github.com/ruarfff/headroom-kit-nix/issues/7): OpenCode Copilot bypass.
 - [#6](https://github.com/ruarfff/headroom-kit-nix/issues/6): metrics across proxy restarts.
 - [#8](https://github.com/ruarfff/headroom-kit-nix/issues/8): custom-CA TLS negotiation
   and misleading authentication errors.
@@ -113,7 +139,7 @@ The unverified coverage includes:
   (best effort), `anthropic`, and `github-copilot` (Headroom Copilot login;
   native client, token swap). OpenCode routes `openai`, `anthropic`,
   `opencode` (Zen/free, best effort), and `github-copilot`. Other providers keep
-  their normal routes. Pi/OpenCode Copilot routing has the confirmed bypasses above.
+  their normal routes. OpenCode Copilot routing still has the confirmed bypass above.
 - Compression quality under concurrent load.
 - Consumer integration. Published revisions run Linux and macOS checks in the
   [release workflow](https://github.com/ruarfff/headroom-kit-nix/actions/workflows/tag.yml).

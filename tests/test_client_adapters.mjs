@@ -24,19 +24,64 @@ test("Pi uses each API's base path without replacing credentials or models", () 
   }
 });
 
-test("Pi sends github-copilot at the Copilot proxy with a Headroom placeholder token", () => {
+test("Pi pins Copilot auth URLs without replacing native protocols, catalog, or refresh", async () => {
   const previous = process.env.HEADROOM_KIT_ENDPOINT;
   const previousCopilot = process.env.HEADROOM_KIT_COPILOT_ENDPOINT;
   process.env.HEADROOM_KIT_ENDPOINT = "http://127.0.0.1:8790/v1";
   process.env.HEADROOM_KIT_COPILOT_ENDPOINT = "http://127.0.0.1:8787/v1";
   try {
     const overrides = {};
-    pi({ registerProvider: (id, config) => (overrides[id] = config) });
-    assert.deepEqual(overrides["github-copilot"], {
-      baseUrl: "http://127.0.0.1:8787/v1",
-      apiKey: "headroom-kit",
+    let startup;
+    let registered;
+    pi({
+      registerProvider: (id, config) => {
+        if (typeof id === "string") overrides[id] = config;
+        else registered = id;
+      },
+      on: (event, handler) => {
+        assert.equal(event, "session_start");
+        startup = handler;
+      },
     });
+    const auth = { baseUrl: "http://127.0.0.1:8787", apiKey: "headroom-kit" };
+    assert.deepEqual(overrides["github-copilot"], auth);
     assert.equal(overrides.openai.baseUrl, "http://127.0.0.1:8790/v1");
+    const provider = {
+      id: "github-copilot",
+      getModels: () => [{ id: "future-model", api: "native-api" }],
+      filterModels: (models) => models,
+      stream: () => {},
+      streamSimple: () => {},
+      auth: {
+        apiKey: { login: () => {}, resolve: () => assert.fail("native token used") },
+        oauth: {
+          login: () => {},
+          refresh: () => {},
+          toAuth: () => assert.fail("OAuth URL used"),
+        },
+      },
+    };
+    startup({}, {
+      modelRegistry: {
+        getProvider: (id) => {
+          assert.equal(id, provider.id);
+          return provider;
+        },
+      },
+    });
+    assert.deepEqual(registered, {
+      ...provider,
+      auth: {
+        apiKey: { ...provider.auth.apiKey, resolve: registered.auth.apiKey.resolve },
+        oauth: { ...provider.auth.oauth, toAuth: registered.auth.oauth.toAuth },
+      },
+    });
+    assert.deepEqual(await registered.auth.apiKey.resolve(), { auth, source: "Headroom" });
+    assert.deepEqual(await registered.auth.apiKey.resolve({ credential: { key: "fake-key" } }), {
+      auth,
+      source: "Headroom",
+    });
+    assert.deepEqual(await registered.auth.oauth.toAuth({ access: "fake-token" }), auth);
   } finally {
     if (previous === undefined) delete process.env.HEADROOM_KIT_ENDPOINT;
     else process.env.HEADROOM_KIT_ENDPOINT = previous;
