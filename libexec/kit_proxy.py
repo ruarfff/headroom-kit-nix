@@ -15,13 +15,51 @@ import sys
 import time
 import urllib.request
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 from kit_copilot import CopilotAuth, managed_copilot_auth
 from kit_runtime import Config, Json, KitError, privacy, say, terminate
 
+# Compression controls only. Routing, auth, learning, and process settings stay
+# under Kit's control; profile values come from the resolved Headroom release.
+COMPRESSION_ENV = (
+    "HEADROOM_SAVINGS_PROFILE",
+    "HEADROOM_SAVINGS_TARGET",
+    "HEADROOM_MODE",
+    "HEADROOM_TARGET_RATIO",
+    "HEADROOM_MIN_TOKENS",
+    "HEADROOM_MIN_CHARS_FOR_BLOCK",
+    "HEADROOM_MAX_ITEMS",
+    "HEADROOM_SMART_CRUSHER_COMPACTION",
+    "HEADROOM_ACCURACY_GUARD",
+    "HEADROOM_CODE_AWARE_ENABLED",
+    "HEADROOM_DEDUPE",
+    "HEADROOM_TOOL_SEARCH",
+    "HEADROOM_TOOL_DESC_MAX_CHARS",
+    "HEADROOM_EXCLUDE_TOOLS",
+    "HEADROOM_NO_CCR",
+    "HEADROOM_CCR_INLINE_RESOLVE",
+    "HEADROOM_NO_CCR_PROACTIVE_EXPANSION",
+    "HEADROOM_OUTPUT_SHAPER",
+    "HEADROOM_EFFORT_ROUTER",
+    "HEADROOM_VERBOSITY_AUTOTUNE",
+)
+COMPRESSION_PREFIXES = (
+    "HEADROOM_COMPRESS_",
+    "HEADROOM_COMPRESSION_",
+    "HEADROOM_PROTECT_",
+    "HEADROOM_LOSSLESS",
+    "HEADROOM_LOSSY_",
+    "HEADROOM_KOMPRESS_",
+    "HEADROOM_DISABLE_KOMPRESS",
+    "HEADROOM_FORCE_KOMPRESS",
+)
 METRICS_ENV = (
     "HEADROOM_STATELESS",
     "HEADROOM_TELEMETRY",
@@ -75,14 +113,20 @@ def locked(path: Path, message: str, timeout: float = 0) -> Iterator[None]:
         yield
 
 
-def proxy_environment(kind: str, port: int) -> dict[str, str]:
-    # Inherited tuning must not defeat the tested policy or change the upstream.
+def proxy_environment(kind: str, port: int, inherited: Mapping[str, str]) -> dict[str, str]:
+    from headroom.agent_savings import apply_agent_savings_env_defaults
+
     blocked = {"OPENAI_BASE_URL", "ANTHROPIC_BASE_URL", "PYTHONPATH", "PYTHONHOME"}
     env = {
         key: value
-        for key, value in os.environ.items()
+        for key, value in inherited.items()
         if key not in blocked
-        and (key in METRICS_ENV or not key.startswith(("HEADROOM_", "GITHUB_COPILOT_")))
+        and (
+            key in METRICS_ENV
+            or key in COMPRESSION_ENV
+            or key.startswith(COMPRESSION_PREFIXES)
+            or not key.startswith(("HEADROOM_", "GITHUB_COPILOT_"))
+        )
         and not key.endswith("TARGET_API_URL")
     }
     env = privacy(env)
@@ -100,12 +144,9 @@ def proxy_environment(kind: str, port: int) -> dict[str, str]:
     if sys.platform == "darwin":
         env.setdefault("MallocAggressiveMadvise", "1")
         env.setdefault("MallocLargeCache", "0")
-    if kind != "copilot":
-        env.update(
-            HEADROOM_OUTPUT_SHAPER="off",
-            HEADROOM_EFFORT_ROUTER="off",
-            HEADROOM_VERBOSITY_AUTOTUNE="off",
-        )
+    # Click reads envvars while parsing, before the proxy callback runs. Seed
+    # here, before both the compatibility hash and the isolated CLI subprocess.
+    apply_agent_savings_env_defaults(env)
     return env
 
 
@@ -119,15 +160,7 @@ def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
         "--no-learn",
     ]
     if kind != "copilot":
-        args += [
-            "--mode",
-            "cache",
-            "--lossless",
-            "--disable-kompress",
-            "--disable-kompress-fallback",
-            "--no-cache",
-            "--no-rate-limit",
-        ]
+        args += ["--no-cache", "--no-rate-limit"]
     else:
         args += ["--openai-api-url", upstream, "--anthropic-api-url", upstream]
     return args
@@ -177,12 +210,12 @@ def identity(version: str, kind: str, env: dict[str, str], auth: CopilotAuth | N
         )
     ).hexdigest()
     # Copilot clients share one subscription proxy. Model, interpreter, and pane env
-    # must not mint a new identity. Metrics settings still apply to every proxy.
+    # must not mint a new identity. Effective native settings apply to every proxy.
     # Other agents also hash upstream credentials.
     payload: list[Json] = [version, implementation, kind]
     if kind == "copilot":
         payload.append([auth.api_url, auth.refresh_oauth_token] if auth else None)
-        payload.append({key: env[key] for key in METRICS_ENV if key in env})
+        payload.append({key: value for key, value in env.items() if key.startswith("HEADROOM_")})
     else:
         payload.append(
             {
@@ -202,7 +235,7 @@ def identity(version: str, kind: str, env: dict[str, str], auth: CopilotAuth | N
 def ensure_proxy(
     cfg: Config, version: str, kind: str, port: int, auth: CopilotAuth | None = None
 ) -> str:
-    env = proxy_environment(kind, port)
+    env = proxy_environment(kind, port, os.environ)
     if auth and not auth.refresh_oauth_token:
         raise KitError("Shared Copilot requires reusable OAuth. Run `headroom copilot-auth login`.")
     fingerprint = identity(version, kind, env, auth)
@@ -374,14 +407,28 @@ def cleanup_proxy(process: subprocess.Popen[bytes], path: Path) -> None:
             signal.signal(sig, handler)
 
 
+def protect_unretrievable_routes(app: "FastAPI") -> None:
+    # Headroom 0.37.0 does not inject CCR tools into Responses, and direct
+    # Chat does not resolve them. Keep only the OpenAI pipeline lossless until
+    # those paths pass the retrieval checks in smoke_compression.py.
+    proxy = app.state.proxy
+    proxy.openai_pipeline = proxy._derived_compress_pipeline("kit-openai-lossless", lossless=True)
+
+
 def serve_main() -> int:
     import uvicorn
+
+    native_run = uvicorn.run
+
+    def run(app: "FastAPI", **options: Json) -> None:
+        protect_unretrievable_routes(app)
+        native_run(app, **options)
 
     if os.environ.get("HEADROOM_AGENT_TYPE") == "copilot":
         managed_copilot_auth()
     # Reserve the listening socket before spawning. Health can never certify a
     # foreign process that wins a check-then-bind race.
-    uvicorn.run = partial(uvicorn.run, fd=int(sys.argv[2]))
+    uvicorn.run = partial(run, fd=int(sys.argv[2]))
     sys.argv = ["headroom", *sys.argv[3:]]
     runpy.run_module("headroom.cli", run_name="__main__")
     return 0

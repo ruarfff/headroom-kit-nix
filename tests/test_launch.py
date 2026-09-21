@@ -400,7 +400,7 @@ class LauncherTests(unittest.TestCase):
         result = self.run_launcher(env={"HEADROOM_VERSION": "0.38.0", "KIT_TEST_VERSION": "0.38.0"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Resolved Headroom 0.38.0", result.stderr)
-        self.assertIn("headroom-ai[proxy]==0.38.0", self.events()[0]["args"])
+        self.assertIn("headroom-ai[proxy,code]==0.38.0", self.events()[0]["args"])
 
     def test_latest_refreshes_disallows_prereleases_and_reports_resolved_version(self) -> None:
         result = self.run_launcher(env={"HEADROOM_VERSION": "latest", "KIT_TEST_VERSION": "0.39.0"})
@@ -860,22 +860,76 @@ class LauncherTests(unittest.TestCase):
         self.wait_for("agent", process)
         self.assertTrue(next(e for e in self.events() if e["event"] == "agent")["tty"])
 
-    def test_codex_privacy_and_conservative_flags(self) -> None:
-        result = self.run_launcher(env={"HEADROOM_BEACON": "on", "HEADROOM_OUTPUT_SHAPER": "on"})
+    def test_native_compression_overrides_and_restart_for_every_wrapper(self) -> None:
+        overrides = {
+            "HEADROOM_SAVINGS_PROFILE": "balanced",
+            "HEADROOM_MODE": "token",
+            "HEADROOM_LOSSLESS": "1",
+            "HEADROOM_DISABLE_KOMPRESS": "1",
+            "HEADROOM_DISABLE_KOMPRESS_FALLBACK": "1",
+            "HEADROOM_OUTPUT_SHAPER": "on",
+            "HEADROOM_EFFORT_ROUTER": "off",
+            "HEADROOM_VERBOSITY_AUTOTUNE": "off",
+        }
+        for command in (
+            "codex-headroom",
+            "copilot-headroom",
+            "copilot-vscode-headroom",
+            "pi-headroom",
+            "opencode-headroom",
+        ):
+            with self.subTest(command=command):
+                self.stop_proxies()
+                result = self.run_launcher(command=command, env=overrides)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                event = next(e for e in reversed(self.events()) if e["event"] == "proxy-start")
+                for key, value in overrides.items():
+                    self.assertEqual(event["env"][key], value)
+                again = self.run_launcher(command=command, env=overrides)
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertIn("Reusing", again.stderr)
+                for key in overrides:
+                    changed = dict(overrides, **{key: "different"})
+                    result = self.run_launcher(command=command, env=changed)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("incompatible managed proxy", result.stderr)
+                self.stop_proxies()
+                result = self.run_launcher(command=command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                event = next(e for e in reversed(self.events()) if e["event"] == "proxy-start")
+                self.assertEqual(event["env"]["HEADROOM_SAVINGS_PROFILE"], "coding")
+
+    def test_privacy_and_routing_remain_managed_without_compression_flags(self) -> None:
+        result = self.run_launcher(
+            env={
+                "HEADROOM_BEACON": "on",
+                "HEADROOM_OUTPUT_SHAPER": "on",
+                "HEADROOM_HOST": "0.0.0.0",
+                "HEADROOM_WORKERS": "8",
+                "HEADROOM_BACKEND": "bedrock",
+                "HEADROOM_PROXY_TOKEN": "fake-token",
+                "HEADROOM_MODEL_ROUTER_ENABLED": "1",
+                "OPENAI_TARGET_API_URL": "https://example.invalid",
+            }
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         event = next(e for e in self.events() if e["event"] == "proxy-start")
         self.assertEqual(event["cwd"], "/")
-        for arg in (
-            "--lossless",
-            "--disable-kompress",
-            "--disable-kompress-fallback",
-            "--no-cache",
-            "--no-rate-limit",
-            "--no-learn",
-        ):
+        for arg in ("--no-cache", "--no-rate-limit", "--no-learn"):
             self.assertIn(arg, event["args"])
+        for arg in ("--mode", "--lossless", "--disable-kompress", "--disable-kompress-fallback"):
+            self.assertNotIn(arg, event["args"])
         self.assertEqual(event["env"]["HEADROOM_BEACON"], "off")
-        self.assertEqual(event["env"]["HEADROOM_OUTPUT_SHAPER"], "off")
+        self.assertEqual(event["env"]["HEADROOM_OUTPUT_SHAPER"], "on")
+        for key in (
+            "HEADROOM_HOST",
+            "HEADROOM_WORKERS",
+            "HEADROOM_BACKEND",
+            "HEADROOM_PROXY_TOKEN",
+            "HEADROOM_MODEL_ROUTER_ENABLED",
+            "OPENAI_TARGET_API_URL",
+        ):
+            self.assertIsNone(event["env"][key])
 
     def test_persistent_metrics_defaults_for_every_proxy(self) -> None:
         for command in (

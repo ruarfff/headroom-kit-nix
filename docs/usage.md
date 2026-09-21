@@ -229,13 +229,16 @@ A wildcard `NO_PROXY` or `no_proxy` makes all client traffic direct and removes
 proxy variables from the child. Headroom keeps the caller's upstream proxy policy;
 the caller's environment is unchanged.
 
-Codex, Pi, and OpenCode use cache mode with lossless compression. Kompress/fallback,
-semantic cache, rate limiting, output shaping, effort routing, and verbosity
-autotuning are off. Copilot uses standard compression and local dashboard stats.
+All wrappers use Headroom's native coding profile, with explicit profile and
+compression overrides supported. OpenAI routes stay lossless until the pinned
+release's CCR retrieval gaps are fixed; Anthropic uses the selected profile.
+See [profile selection, downloads, and rollback](configuration.md#compression-profiles).
+Semantic caching and rate limiting remain disabled for the Codex, Pi, and OpenCode
+proxies; Copilot keeps its native defaults for those features.
 
-[Metrics and storage settings](configuration.md#local-metrics-and-storage) pass
-through to managed proxies. Other inherited `HEADROOM_*` tuning and upstream
-overrides are dropped. Direct `headroom` commands still accept upstream flags.
+[Metrics and storage settings](configuration.md#local-metrics-and-storage) also
+pass through. Other inherited `HEADROOM_*` settings and upstream overrides are
+still filtered. Direct `headroom` commands accept upstream flags and are unmanaged.
 See [Headroom proxy controls](https://docs.headroomlabs.ai/docs/proxy).
 
 ## Metrics and retention

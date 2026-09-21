@@ -151,7 +151,7 @@ def privacy(env: Mapping[str, str]) -> dict[str, str]:
 
 def resolve(cfg: Config) -> tuple[str, str]:
     requested = cfg["version"]
-    spec = "headroom-ai[proxy]" + ("" if requested == "latest" else f"=={requested}")
+    spec = "headroom-ai[proxy,code]" + ("" if requested == "latest" else f"=={requested}")
     args = [
         cfg["uv"],
         "--no-env-file",

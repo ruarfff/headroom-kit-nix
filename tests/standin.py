@@ -152,6 +152,17 @@ def serve_proxy() -> int:
                 "HEADROOM_WORKSPACE_DIR",
                 "HEADROOM_SAVINGS_PATH",
                 "HEADROOM_SAVINGS_EVENTS_PATH",
+                "HEADROOM_SAVINGS_PROFILE",
+                "HEADROOM_MODE",
+                "HEADROOM_LOSSLESS",
+                "HEADROOM_DISABLE_KOMPRESS",
+                "HEADROOM_DISABLE_KOMPRESS_FALLBACK",
+                "HEADROOM_HOST",
+                "HEADROOM_WORKERS",
+                "HEADROOM_BACKEND",
+                "HEADROOM_PROXY_TOKEN",
+                "HEADROOM_MODEL_ROUTER_ENABLED",
+                "OPENAI_TARGET_API_URL",
                 "HEADROOM_OUTPUT_SHAPER",
                 "HEADROOM_EFFORT_ROUTER",
                 "HEADROOM_VERBOSITY_AUTOTUNE",
@@ -281,6 +292,14 @@ def run_session() -> int:
     fake._urlopen = auth_urlopen
     headroom = types.ModuleType("headroom")
     headroom.copilot_auth = fake
+    savings = types.ModuleType("headroom.agent_savings")
+
+    def apply_defaults(env: dict[str, str]) -> None:
+        # Only a call sentinel; smoke_compression.py checks the real profile.
+        env.setdefault("HEADROOM_SAVINGS_PROFILE", "coding")
+
+    savings.apply_agent_savings_env_defaults = apply_defaults
+    sys.modules["headroom.agent_savings"] = savings
     proxy = types.ModuleType("headroom.proxy")
     proxy.ssl_context = types.SimpleNamespace(build_httpx_verify=lambda: True)
     sys.modules["headroom"] = headroom

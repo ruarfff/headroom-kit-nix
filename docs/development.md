@@ -55,6 +55,29 @@ persistence. It uses fake credentials and temporary storage: no model calls or
 GUI. `--cache-dir` reuses a download cache. This runs outside Nix checks because
 native wheels need runtime validation.
 
+### Compression comparison
+
+Inside `nix develop`, run the pinned runtime comparison without provider accounts:
+
+```sh
+uvx --isolated --no-env-file --no-python-downloads --python python3.13 \
+  --from 'headroom-ai[proxy,code]==0.37.0' \
+  python -I tests/smoke_compression.py
+```
+
+The script emits JSON for the old policy and native coding profile. It uses
+separate temporary homes, local HTTP upstream fixtures, and real Headroom compression,
+CLI parsing, storage, retrieval, and streaming. Optional `--model-cache /path/to/hub`
+reuses model artifacts only. Runtime dependencies and model artifacts can require
+downloads; no provider requests are made. This check stays outside sandboxed Nix
+checks, like the other pinned-runtime checks.
+
+It checks all native profiles and proxy kinds, input tokens, tool-schema tokens,
+pre-upstream compression-path time, request time, startup, exact reads, short output, tool
+calls, and multi-turn prefixes. Separate seeded-store tests verify CCR continuation
+on Anthropic and explicitly declared Responses retrieval tools. It also reproduces
+the OpenAI gaps that require Kit's lossless exception. See [results and limits](validation.md#native-compression-profiles).
+
 ### Local client routing
 
 Requires macOS and the selected clients. Temporary homes, fake credentials, and a
