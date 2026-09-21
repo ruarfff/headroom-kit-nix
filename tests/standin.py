@@ -8,6 +8,7 @@ import socket
 import sys
 import time
 import types
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -125,6 +126,8 @@ def serve_proxy() -> int:
     args = (
         sys.argv[sys.argv.index("__serve") + 2 :]
         if "__serve" in sys.argv
+        else sys.argv[sys.argv.index("__headroom") + 1 :]
+        if "__headroom" in sys.argv
         else sys.argv[sys.argv.index("-m") + 2 :]
     )
     if args == ["--version"]:
@@ -226,10 +229,16 @@ def run_session() -> int:
     sys.executable = str(ROOT / "runtime python")
     fake = types.ModuleType("headroom.copilot_auth")
 
-    def auth() -> types.SimpleNamespace:
+    def auth() -> types.SimpleNamespace | None:
         if MODE == "auth-failure":
             print("fake-private-auth-diagnostic")
             raise ValueError("fake-private-auth-diagnostic")
+        if MODE in ("auth-transport", "auth-service", "auth-rejected", "auth-recovery"):
+            try:
+                fake._urlopen(urllib.request.Request("https://example.invalid"), timeout=1)
+            except OSError:
+                if MODE != "auth-recovery":
+                    return None
         return types.SimpleNamespace(
             api_url="https://api.githubcopilot.com",
             token=os.environ.get("KIT_TEST_ACCESS_TOKEN", "fake-test-token"),
@@ -237,7 +246,25 @@ def run_session() -> int:
             api_token_expires_at=None,
         )
 
+    def urlopen(request: urllib.request.Request, *, timeout: float) -> Never:
+        if MODE in ("auth-service", "auth-rejected"):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                503 if MODE == "auth-service" else 401,
+                "fake-private-response",
+                {},
+                None,
+            )
+        raise ConnectionError("fake-private-transport")
+
     fake.resolve_subscription_bearer_token_details = auth
+    fake._urlopen = urlopen
+    headroom = types.ModuleType("headroom")
+    headroom.copilot_auth = fake
+    proxy = types.ModuleType("headroom.proxy")
+    proxy.ssl_context = types.SimpleNamespace(build_httpx_verify=lambda: True)
+    sys.modules["headroom"] = headroom
+    sys.modules["headroom.proxy"] = proxy
     sys.modules["headroom.copilot_auth"] = fake
     click = types.ModuleType("click")
     click.ClickException = ValueError
@@ -263,7 +290,7 @@ def main() -> int:
         return resolve_runtime()
     if name in ("codex", "copilot", "pi", "opencode", "agent with spaces", "code", "code-insiders"):
         return run_agent(name)
-    if "-m" in sys.argv or "__serve" in sys.argv:
+    if "-m" in sys.argv or "__serve" in sys.argv or "__headroom" in sys.argv:
         return serve_proxy()
     return run_session()
 

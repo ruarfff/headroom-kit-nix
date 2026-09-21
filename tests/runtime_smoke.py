@@ -56,7 +56,10 @@ def smoke_adapters(env: dict[str, str], root: Path) -> None:
     uvx = shutil.which("uvx")
     if uvx is None:
         raise RuntimeError("uvx is required; run this smoke test inside nix develop")
-    for script in ("smoke_writer.py", "smoke_auth.py", "smoke_metrics.py"):
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        raise RuntimeError("openssl is required; run this smoke test inside nix develop")
+    for script in ("smoke_writer.py", "smoke_auth.py", "smoke_tls.py", "smoke_metrics.py"):
         subprocess.run(
             [
                 uvx,
@@ -71,7 +74,7 @@ def smoke_adapters(env: dict[str, str], root: Path) -> None:
                 "-I",
                 str(Path(__file__).with_name(script).resolve()),
             ],
-            env=env,
+            env=dict(env, KIT_TEST_OPENSSL=openssl),
             cwd=root,
             check=True,
             timeout=300,

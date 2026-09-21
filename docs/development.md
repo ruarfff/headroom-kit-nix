@@ -50,10 +50,38 @@ python tests/runtime_smoke.py "$(readlink result)"
 ```
 
 Downloads Headroom 0.37.0 and checks proxy startup/reuse/stop, routing arguments,
-settings preservation, local token refresh, and metrics persistence. It uses fake
+settings preservation, local token refresh, custom-CA TLS negotiation, and metrics
+persistence. The TLS check uses OpenSSL from the dev shell to create a temporary
+local certificate. It uses fake
 credentials and temporary storage: no model calls or GUI. `--cache-dir` reuses a
 download cache. This runs outside Nix checks because native wheels need runtime
 validation.
+
+### Copilot TLS compatibility
+
+Headroom 0.37.0 gives urllib a context that advertises HTTP/2, but urllib sends
+HTTP/1.1. Kit replaces only `build_urlopen_context` in memory, using Headroom's
+existing trust builder with HTTP/1.1 ALPN. The httpx builder, CA settings,
+certificate checks, and urllib proxy policy stay unchanged. This applies to
+subscription discovery, managed token refresh, and the Kit `headroom` launcher;
+the installed package cache is not edited.
+
+During subscription discovery, Kit records transport and service failures before
+Headroom turns them into a missing resolution. Error text and response bodies
+are not passed to upstream logging. A later successful candidate still wins.
+HTTP 401/403 retain the subscription/login diagnostic; connection failures and
+other HTTP failures get separate network/service guidance.
+
+Run the credential-free regression on its own inside `nix develop`:
+
+```sh
+uvx --isolated --no-env-file --from 'headroom-ai[proxy]==0.37.0' python -I tests/smoke_tls.py
+```
+
+It reproduces the h2 disconnect against local HTTPS, then checks HTTP/1.1,
+replacement and additive CA roots, hostname verification, proxy policy, and
+redacted auth diagnostics. Keep this adapter until a fixed Headroom release
+passes these checks without it, including managed refresh.
 
 ### Local client routing
 
@@ -122,7 +150,8 @@ It stops the temporary proxy on exit and does not print raw client diagnostics.
 libexec/
 ├── launch.py        isolated entry point
 ├── kit_runtime.py   version resolution and foreground processes
-├── kit_proxy.py     shared owner, status/stop, compatibility, and auth
+├── kit_proxy.py     shared owner, status/stop, and compatibility
+├── kit_copilot.py   subscription auth, refresh policy, and urllib TLS
 ├── kit_session.py   client routing and editor isolation
 ├── pi-extension.mjs temporary Pi endpoint overrides
 └── opencode-plugin/ OpenCode v2 request routing
