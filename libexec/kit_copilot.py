@@ -48,9 +48,11 @@ def auth_failures(adapter: ModuleType) -> Iterator[set[str]]:
     upstream_urlopen = adapter._urlopen
     failures: set[str] = set()
 
-    def urlopen(request: urllib.request.Request, *, timeout: float) -> HTTPResponse:
+    @contextlib.contextmanager
+    def urlopen(request: urllib.request.Request, *, timeout: float) -> Iterator[HTTPResponse]:
         try:
-            return upstream_urlopen(request, timeout=timeout)
+            with upstream_urlopen(request, timeout=timeout) as response:
+                yield response
         except urllib.error.HTTPError as error:
             if error.code not in (401, 403):
                 failures.add("service")

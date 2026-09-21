@@ -470,6 +470,8 @@ def main() -> int:
         # Headroom itself also reads this name as a build-version override.
         # Kit owns selection; do not let "latest" replace its reported version.
         env.pop("HEADROOM_VERSION", None)
+        # Allocator re-exec would bypass Kit's in-memory TLS adapter.
+        env["HEADROOM_MALLOC_TUNING"] = "0"
         os.execve(
             python,
             [

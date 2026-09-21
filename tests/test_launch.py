@@ -424,6 +424,16 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "headroom 0.37.0\n")
 
+    def test_direct_proxy_disables_allocator_reexec_before_launch(self) -> None:
+        for inherited in ({}, {"HEADROOM_MALLOC_TUNING": "1"}):
+            with self.subTest(inherited=inherited):
+                result = self.run_launcher(
+                    "proxy", command="headroom", mode="startup-failure", env=inherited
+                )
+                self.assertEqual(result.returncode, 7, result.stderr)
+                event = [e for e in self.events() if e["event"] == "proxy-start"][-1]
+                self.assertEqual(event["env"]["HEADROOM_MALLOC_TUNING"], "0")
+
     def test_bad_ports_and_conflicting_providers_fail_before_resolution(self) -> None:
         for env in (
             {"HEADROOM_CODEX_PORT": "0"},
@@ -1076,6 +1086,7 @@ class LauncherTests(unittest.TestCase):
     def test_copilot_transport_and_service_failures_do_not_blame_login(self) -> None:
         for mode, expected in (
             ("auth-transport", "transport failed"),
+            ("auth-read", "transport failed"),
             ("auth-service", "service failed"),
             ("auth-rejected", "copilot-auth login"),
         ):

@@ -21,6 +21,7 @@ from kit_copilot import auth_failures, configure_urllib_tls
 class Handler(BaseHTTPRequestHandler):
     status = 401
     disconnect = False
+    truncated = False
     protocols: list[str | None] = []
 
     def do_GET(self) -> None:
@@ -30,6 +31,8 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
         self.send_response(self.status)
+        if self.truncated:
+            self.send_header("Content-Length", "1000")
         self.end_headers()
         self.wfile.write(b"fake-private-response-body")
 
@@ -89,7 +92,7 @@ class TLSRegression(unittest.TestCase):
         self.addCleanup(thread.join)
         self.addCleanup(self.server.shutdown)
         self.url = f"https://localhost:{self.server.server_port}/token"
-        Handler.status, Handler.disconnect = 401, False
+        Handler.status, Handler.disconnect, Handler.truncated = 401, False, False
         Handler.protocols.clear()
         self.environment({})
 
@@ -166,13 +169,14 @@ class TLSRegression(unittest.TestCase):
             confidence="test",
         )
         original = self.adapter._urlopen
-        for status, disconnect, expected in (
-            (401, False, set()),
-            (403, False, set()),
-            (503, False, {"service"}),
-            (200, True, {"transport"}),
+        for status, disconnect, truncated, expected in (
+            (401, False, False, set()),
+            (403, False, False, set()),
+            (503, False, False, {"service"}),
+            (200, True, False, {"transport"}),
+            (200, False, True, {"transport"}),
         ):
-            Handler.status, Handler.disconnect = status, disconnect
+            Handler.status, Handler.disconnect, Handler.truncated = status, disconnect, truncated
             with (
                 self.assertLogs("headroom.copilot_auth", level="DEBUG") as logs,
                 auth_failures(self.adapter) as failures,

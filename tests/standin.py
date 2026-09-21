@@ -1,5 +1,6 @@
 """Executable stand-ins: no real agents, accounts, or model endpoints."""
 
+import io
 import json
 import os
 import runpy
@@ -10,6 +11,7 @@ import time
 import types
 import urllib.error
 import urllib.request
+from http.client import IncompleteRead
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import FrameType
@@ -142,6 +144,7 @@ def serve_proxy() -> int:
         env={
             k: os.environ.get(k)
             for k in (
+                "HEADROOM_MALLOC_TUNING",
                 "HEADROOM_BEACON",
                 "HEADROOM_TELEMETRY",
                 "HEADROOM_LOG_MESSAGES",
@@ -224,6 +227,25 @@ def serve_proxy() -> int:
     return 0
 
 
+class TruncatedResponse(io.BytesIO):
+    def read(self, size: int = -1) -> bytes:
+        raise IncompleteRead(b"fake-private-partial-body", 1000)
+
+
+def auth_urlopen(request: urllib.request.Request, *, timeout: float) -> TruncatedResponse:
+    if MODE == "auth-read":
+        return TruncatedResponse()
+    if MODE in ("auth-service", "auth-rejected"):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            503 if MODE == "auth-service" else 401,
+            "fake-private-response",
+            {},
+            None,
+        )
+    raise ConnectionError("fake-private-transport")
+
+
 def run_session() -> int:
     # Execute the real session code in the simulated resolved environment.
     sys.executable = str(ROOT / "runtime python")
@@ -233,10 +255,19 @@ def run_session() -> int:
         if MODE == "auth-failure":
             print("fake-private-auth-diagnostic")
             raise ValueError("fake-private-auth-diagnostic")
-        if MODE in ("auth-transport", "auth-service", "auth-rejected", "auth-recovery"):
+        if MODE in (
+            "auth-transport",
+            "auth-service",
+            "auth-rejected",
+            "auth-recovery",
+            "auth-read",
+        ):
             try:
-                fake._urlopen(urllib.request.Request("https://example.invalid"), timeout=1)
-            except OSError:
+                with fake._urlopen(
+                    urllib.request.Request("https://example.invalid"), timeout=1
+                ) as response:
+                    response.read()
+            except (OSError, IncompleteRead):
                 if MODE != "auth-recovery":
                     return None
         return types.SimpleNamespace(
@@ -246,19 +277,8 @@ def run_session() -> int:
             api_token_expires_at=None,
         )
 
-    def urlopen(request: urllib.request.Request, *, timeout: float) -> Never:
-        if MODE in ("auth-service", "auth-rejected"):
-            raise urllib.error.HTTPError(
-                request.full_url,
-                503 if MODE == "auth-service" else 401,
-                "fake-private-response",
-                {},
-                None,
-            )
-        raise ConnectionError("fake-private-transport")
-
     fake.resolve_subscription_bearer_token_details = auth
-    fake._urlopen = urlopen
+    fake._urlopen = auth_urlopen
     headroom = types.ModuleType("headroom")
     headroom.copilot_auth = fake
     proxy = types.ModuleType("headroom.proxy")
