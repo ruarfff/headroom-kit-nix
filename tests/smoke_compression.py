@@ -19,13 +19,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "libexec"))
 sys.path.insert(0, str(Path(__file__).parent))
-from compression_fixtures import FIXTURES, ROUTES, Upstream, request_body, upstream
+from compression_fixtures import (
+    FIXTURES,
+    LOSSY_LOG,
+    RETRIEVAL_MARKER,
+    ROUTES,
+    Upstream,
+    request_body,
+    upstream,
+)
 from kit_proxy import health, proxy_args, proxy_environment
 from kit_runtime import Json, privacy, terminate
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "libexec/launch.py"
 OLD_FLAGS = ["--mode", "cache", "--lossless", "--disable-kompress", "--disable-kompress-fallback"]
-ORIGINAL = "Recovery fixture: exact content removed by compression."
+ORIGINAL = "Seeded recovery fixture: exact content for the transport checks."
 
 
 @dataclass(frozen=True)
@@ -126,6 +134,15 @@ def profile_contracts(target: Upstream) -> None:
         config = proxy.get("/health")["config"]
         assert config["disable_kompress"] and config["disable_kompress_fallback"]
         assert proxy.get("/stats")["compression_cache"]["mode"] == "token"
+    for kind in ("codex", "copilot", "pi", "opencode"):
+        with start_proxy("native", target, kind, {"HEADROOM_COMPRESSORS": "log"}) as proxy:
+            target.reset()
+            body = request_body("anthropic", FIXTURES["json"], "selection", False)
+            assert "fixture complete" in proxy.post("anthropic", body, f"selection-{kind}")
+            assert FIXTURES["json"] in strings(target.calls[0]["messages"]), (
+                kind,
+                "An unselected compressor changed the JSON fixture",
+            )
 
 
 def strings(value: Json) -> Iterator[str]:
@@ -156,6 +173,13 @@ def fixture_case(
     result = proxy.post(route, body, session)
     elapsed = (time.perf_counter() - started) * 1000
     assert "fixture complete" in result and "headroom_retrieve" not in result, (route, fixture)
+    if stream:
+        end = {
+            "responses": "response.completed",
+            "chat": "[DONE]",
+            "anthropic": "event: message_stop",
+        }
+        assert end[route] in result, (route, fixture, "stream did not complete")
     assert target.calls, (route, fixture, "no upstream request")
     forwarded = target.calls[0][key]
     assert forwarded[1] == body[key][1], (route, fixture, "tool call changed")
@@ -189,7 +213,35 @@ def fixture_case(
     return row
 
 
-def retrieval_checks(proxy: Proxy, target: Upstream) -> int:
+def lossy_retrieval_case(proxy: Proxy, target: Upstream, stream: bool) -> dict[str, Json]:
+    text = f"INFO mode_{stream}: retrieval fixture\n{LOSSY_LOG}"
+    row = fixture_case(proxy, target, "anthropic", stream, "lossy-log", text, "native")
+    forwarded = "\n".join(strings(target.calls[0]["messages"]))
+    omitted = [line for line in text.splitlines() if line not in forwarded]
+    assert omitted and row["forwarded_tokens"] < row["input_tokens"], "Lossy compression skipped"
+    markers = RETRIEVAL_MARKER.findall(forwarded)
+    assert len(markers) == 1, "No generated retrieval marker"
+    hash_key = markers[0]
+    assert text in strings(proxy.get(f"/v1/retrieve/{hash_key}")), "Original was not stored"
+    assert target.retrievals == markers and len(target.calls) == 2, "Retrieval skipped"
+    results = target.calls[1]["messages"][-1]["content"]
+    retrieved = json.dumps(
+        next(block for block in results if block.get("tool_use_id") == "call_retrieve")
+    )
+    assert all(line in retrieved for line in omitted), "Omitted lines not retrieved"
+    assert any(
+        "router:tool_result:log" in request["transforms_applied"]
+        for request in proxy.get("/stats")["recent_requests"]
+    ), "LogCompressor was not applied"
+    return dict(
+        row,
+        omitted_lines=len(omitted),
+        retrieval_marker=hash_key,
+        upstream_streams=[body.get("stream") for body in target.calls],
+    )
+
+
+def seeded_retrieval_checks(proxy: Proxy, target: Upstream) -> int:
     from headroom.cache.compression_store import get_compression_store
     from headroom.ccr.tool_injection import create_ccr_tool_definition
 
@@ -251,18 +303,30 @@ def worker(policy: str) -> None:
                 for stream in (False, True)
                 for fixture, text in FIXTURES.items()
             ]
-            retrievals = retrieval_checks(proxy, target) if policy == "native" else 0
-            print(
-                json.dumps(
-                    {
-                        "policy": policy,
-                        "startup_seconds": proxy.startup_seconds,
-                        "rows": rows,
-                        "retrievals": retrievals,
-                        "retrieval_failures": 0,
-                    }
-                )
-            )
+            report = {
+                "policy": policy,
+                "startup_seconds": proxy.startup_seconds,
+                "rows": rows,
+                "seeded_retrievals": seeded_retrieval_checks(proxy, target)
+                if policy == "native"
+                else 0,
+                "lossy_retrievals": [],
+                "retrieval_failures": 0,
+            }
+        if policy == "native":
+            for stream in (False, True):
+                overrides = {
+                    "HEADROOM_COMPRESSORS": "log",
+                    "HEADROOM_MODE": "token",
+                    "HEADROOM_LOSSLESS": "0",
+                    "HEADROOM_MIN_TOKENS": "128",
+                    "HEADROOM_NO_CCR_PROACTIVE_EXPANSION": "1",
+                    "HEADROOM_WORKSPACE_DIR": str(Path.home() / f"lossy-{stream}"),
+                    "HF_HUB_OFFLINE": "1",
+                }
+                with start_proxy("native", target, overrides=overrides) as proxy:
+                    report["lossy_retrievals"].append(lossy_retrieval_case(proxy, target, stream))
+        print(json.dumps(report))
 
 
 def compare(reports: list[dict[str, Json]]) -> None:
@@ -277,7 +341,8 @@ def compare(reports: list[dict[str, Json]]) -> None:
         else:
             # Removing Kit's OpenAI guard must fail this safety regression.
             assert row["forwarded_tokens"] == previous
-    assert native["retrievals"] == 4
+    assert native["seeded_retrievals"] == 4
+    assert len(native["lossy_retrievals"]) == 2
 
 
 def main() -> None:

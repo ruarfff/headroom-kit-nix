@@ -153,6 +153,7 @@ def serve_proxy() -> int:
                 "HEADROOM_SAVINGS_PATH",
                 "HEADROOM_SAVINGS_EVENTS_PATH",
                 "HEADROOM_SAVINGS_PROFILE",
+                "HEADROOM_COMPRESSORS",
                 "HEADROOM_MODE",
                 "HEADROOM_LOSSLESS",
                 "HEADROOM_DISABLE_KOMPRESS",

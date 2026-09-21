@@ -709,12 +709,18 @@ class LauncherTests(unittest.TestCase):
         self.assertNotIn("fake-", json.dumps(kit_proxy.control(self.cfg["copilotPort"])))
 
     def test_copilot_cli_and_editor_share_only_matching_context(self) -> None:
-        self.assertEqual(self.run_launcher(command="copilot-headroom").returncode, 0)
-        for account, code in (("fake-refresh-account-one", 0), ("fake-other-account", 1)):
+        result = self.run_launcher(command="copilot-headroom", env={"HEADROOM_COMPRESSORS": "log"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for account, compressors, code in (
+            ("fake-refresh-account-one", "log", 0),
+            ("fake-other-account", "log", 1),
+            ("fake-refresh-account-one", "search", 1),
+        ):
             result = self.run_launcher(
                 command="copilot-vscode-headroom",
                 env={
                     "HEADROOM_VSCODE_PORT": str(self.cfg["copilotPort"]),
+                    "HEADROOM_COMPRESSORS": compressors,
                     "KIT_TEST_ACCOUNT": account,
                 },
             )
@@ -863,6 +869,7 @@ class LauncherTests(unittest.TestCase):
     def test_native_compression_overrides_and_restart_for_every_wrapper(self) -> None:
         overrides = {
             "HEADROOM_SAVINGS_PROFILE": "balanced",
+            "HEADROOM_COMPRESSORS": "log",
             "HEADROOM_MODE": "token",
             "HEADROOM_LOSSLESS": "1",
             "HEADROOM_DISABLE_KOMPRESS": "1",
@@ -889,7 +896,10 @@ class LauncherTests(unittest.TestCase):
                 self.assertEqual(again.returncode, 0, again.stderr)
                 self.assertIn("Reusing", again.stderr)
                 for key in overrides:
-                    changed = dict(overrides, **{key: "different"})
+                    changed = dict(
+                        overrides,
+                        **{key: "search" if key == "HEADROOM_COMPRESSORS" else "different"},
+                    )
                     result = self.run_launcher(command=command, env=changed)
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertIn("incompatible managed proxy", result.stderr)

@@ -29,6 +29,8 @@ FIXTURES = {
     "read": "# Preserve these exact bytes for editing\n"
     + "\n".join(f"def function_{i}(value):\n    return value + {i}\n" for i in range(90)),
 }
+LOSSY_LOG = "\n".join(f"WARN worker_{i:04d}: unique observation {i:04d}" for i in range(180))
+RETRIEVAL_MARKER = re.compile(r"(?:<<ccr:|Retrieve more: hash=)([a-f0-9]+)")
 ROUTES = {"responses": "/v1/responses", "chat": "/v1/chat/completions", "anthropic": "/v1/messages"}
 
 
@@ -251,7 +253,7 @@ class Upstream:
         self.calls.append(body)
         if len(self.calls) == 1:
             self.received_at = time.perf_counter()
-            markers = re.findall(r"<<ccr:([a-f0-9]+)", json.dumps(body))
+            markers = RETRIEVAL_MARKER.findall(json.dumps(body))
             if markers and "headroom_retrieve" in json.dumps(body.get("tools", [])):
                 self.retrievals.append(markers[0])
                 return json.dumps(response_body(route, markers[0])).encode(), "application/json"

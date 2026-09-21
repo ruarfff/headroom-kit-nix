@@ -165,7 +165,7 @@ Home Manager includes the control command. For individual packages, add
 | Route | Default port | Share when |
 | --- | --- | --- |
 | Codex CLI/app | 8788 | Same configuration |
-| Copilot CLI/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential |
+| Copilot CLI/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential and proxy settings |
 | Pi | 8790 | Same configuration |
 | OpenCode | 8791 | Same configuration; each client has its own OpenCode server |
 
@@ -173,7 +173,7 @@ A healthy port is not enough: incompatible proxies and unrelated listeners are
 left alone. Stop the managed instance or choose another port. Storage and telemetry
 settings also affect [compatibility](configuration.md#local-metrics-and-storage).
 
-Copilot model and client environment changes do not prevent reuse. Access-token
+Copilot model choice and unrelated client settings do not prevent reuse. Access-token
 rotation is handled automatically, but a **new OAuth credential requires a stop**,
 even for the same account. Client sign-out does not revoke the proxy's credential.
 For a second account, authorize Headroom for it and use another port:
@@ -229,12 +229,10 @@ A wildcard `NO_PROXY` or `no_proxy` makes all client traffic direct and removes
 proxy variables from the child. Headroom keeps the caller's upstream proxy policy;
 the caller's environment is unchanged.
 
-All wrappers use Headroom's native coding profile, with explicit profile and
-compression overrides supported. OpenAI routes stay lossless until the pinned
-release's CCR retrieval gaps are fixed; Anthropic uses the selected profile.
-See [profile selection, downloads, and rollback](configuration.md#compression-profiles).
-Semantic caching and rate limiting remain disabled for the Codex, Pi, and OpenCode
-proxies; Copilot keeps its native defaults for those features.
+Compression defaults to native `coding`; OpenAI routes stay lossless for the
+pinned retrieval gaps. See [overrides and rollback](configuration.md#compression-profiles).
+Semantic caching and rate limiting remain off for Codex, Pi, and OpenCode proxies;
+Copilot keeps its native defaults.
 
 [Metrics and storage settings](configuration.md#local-metrics-and-storage) also
 pass through. Other inherited `HEADROOM_*` settings and upstream overrides are

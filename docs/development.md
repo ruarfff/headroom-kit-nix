@@ -65,18 +65,14 @@ uvx --isolated --no-env-file --no-python-downloads --python python3.13 \
   python -I tests/smoke_compression.py
 ```
 
-The script emits JSON for the old policy and native coding profile. It uses
-separate temporary homes, local HTTP upstream fixtures, and real Headroom compression,
-CLI parsing, storage, retrieval, and streaming. Optional `--model-cache /path/to/hub`
-reuses model artifacts only. Runtime dependencies and model artifacts can require
-downloads; no provider requests are made. This check stays outside sandboxed Nix
-checks, like the other pinned-runtime checks.
+It emits JSON for the old switches and native profile using temporary homes and
+local HTTP providers. It checks profile/selection handling, compression, protected
+content, prefixes, and real lossy LogCompressor recovery in both client modes.
+Seeded-store checks separately cover retrieval transport and the OpenAI gaps.
 
-It checks all native profiles and proxy kinds, input tokens, tool-schema tokens,
-pre-upstream compression-path time, request time, startup, exact reads, short output, tool
-calls, and multi-turn prefixes. Separate seeded-store tests verify CCR continuation
-on Anthropic and explicitly declared Responses retrieval tools. It also reproduces
-the OpenAI gaps that require Kit's lossless exception. See [results and limits](validation.md#native-compression-profiles).
+`--model-cache /path/to/hub` reuses model artifacts only. Downloads may be needed;
+no live credentials or paid calls are used. This runtime check runs outside Nix's
+sandbox. See [results and limits](validation.md#native-compression-profiles).
 
 ### Local client routing
 

@@ -102,66 +102,49 @@ use its default. Empty values are errors.
 
 ## Compression profiles
 
-All managed wrappers use Headroom's native **`coding`** profile. Kit applies the
-selected release's complete profile before CLI parsing, without copying profile
-values into Nix or the launchers. The coding profile protects file reads, compresses
-new observations, and keeps already-forwarded prefixes stable.
+Managed wrappers default to Headroom's **`coding`** profile: protected file reads,
+compression of new observations, and stable forwarded prefixes. Kit applies the
+complete native profile before CLI parsing; explicit environment values win.
+Headroom 0.37.0 also provides `balanced`, `general`, and `agent-90`.
 
 ```sh
-HEADROOM_SAVINGS_PROFILE=coding codex-headroom
 HEADROOM_SAVINGS_PROFILE=balanced pi-headroom
-HEADROOM_SAVINGS_PROFILE=general opencode-headroom
+HEADROOM_COMPRESSORS=log,search codex-headroom
 ```
 
-`balanced`, `general`, and `agent-90` are explicit alternatives in 0.37.0. Their
-names and behaviour belong to Headroom; advertised savings are not guarantees.
+`HEADROOM_COMPRESSORS` restricts the built-in compressors. Unset it to enable all.
 
-**OpenAI exception:** Headroom 0.37.0 has CCR retrieval gaps on Responses and direct
-Chat Completions. Kit keeps the OpenAI pipeline lossless, including Copilot models
-that use those protocols. Anthropic Messages uses the selected profile unchanged.
-This exception also applies to aggressive profiles; `HEADROOM_LOSSLESS=0` does not
-remove it. See the [reproducer and comparison](validation.md#native-compression-profiles).
+**OpenAI stays lossless** because of Headroom 0.37.0's CCR retrieval gaps, including
+OpenAI-wire Copilot. Aggressive profiles and `HEADROOM_LOSSLESS=0` do not bypass
+this exception. Anthropic uses the selected profile.
+See [validation](validation.md#openai-retrieval-exception).
 
-Native compression settings pass through, including:
+Overrides cover profiles, targets, compressor selection, lossless/Kompress,
+thresholds, read protection, tool search, deduplication, code-aware compression,
+and CCR. See the [allowlist](../libexec/kit_proxy.py).
+`HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
+also pass through; the default profile does not enable them.
 
-- `HEADROOM_SAVINGS_PROFILE`, `HEADROOM_SAVINGS_TARGET`, `HEADROOM_MODE`, and
-  `HEADROOM_TARGET_RATIO`.
-- `HEADROOM_LOSSLESS`, `HEADROOM_DISABLE_KOMPRESS`,
-  `HEADROOM_DISABLE_KOMPRESS_FALLBACK`, and the other `HEADROOM_KOMPRESS_*`,
-  `HEADROOM_DISABLE_KOMPRESS*`, and `HEADROOM_FORCE_KOMPRESS*` controls.
-- Profile thresholds, read protection, tool search, deduplication, code-aware
-  compression, and CCR controls. `libexec/kit_proxy.py` lists the allowed names.
-- `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and
-  `HEADROOM_VERBOSITY_AUTOTUNE`. Kit no longer forces these off. The default coding
-  profile disables effort routing and does not enable the other two.
-
-Explicit native values take precedence over profile defaults. Routing,
-credentials, process settings, privacy restrictions, semantic caching, and rate
-limiting remain under the existing Kit policy. Disabling CCR or read protection
-is an explicit user choice and can remove those safeguards.
+Routing, auth, privacy, process settings, semantic caching, and rate limiting stay
+managed. Disabling CCR or read protection removes those safeguards.
 
 ### Downloads and restarts
 
-Kit resolves `headroom-ai[proxy,code]`; the `code` extra supplies the Tree-sitter
-AST dependencies. The proxy extra supplies Kompress's ONNX runtime and tokenizer.
-Headroom can download `chopratejas/kompress-v2-base` from Hugging Face in the
-background on first startup. Native model initialization is deferred until use;
-a ready proxy does not prove that the model has finished downloading. Compression
-can be reduced while the model is unavailable. Allow network access and space for
-the model cache, or explicitly disable Kompress and its fallback.
+The runtime includes Tree-sitter and Kompress dependencies. Headroom may download
+`chopratejas/kompress-v2-base` from Hugging Face on first startup. Proxy readiness
+does not mean the model is ready; compression may be reduced until it is.
+Allow cache space and network access, or disable Kompress and its fallback.
 
-Effective profile and compression settings are part of proxy compatibility,
-including shared Copilot proxies. A different setting does not silently replace
-or reuse an existing proxy. Stop it explicitly, then relaunch with the new values:
+Profile and compressor settings must match for reuse, including shared Copilot.
+To change them, stop the proxy and relaunch:
 
 ```sh
 headroom-kit stop 8787
 HEADROOM_SAVINGS_PROFILE=balanced copilot-headroom
 ```
 
-Stopping interrupts attached clients. Pi, OpenCode, Copilot CLI, and VS Code must
-use matching settings when they share the Copilot port. Unset overrides when you
-want to return to profile defaults, then stop and relaunch again.
+Stopping interrupts attached clients. All clients sharing a port must use matching
+settings. To restore defaults, unset overrides and stop/relaunch again.
 
 ### Conservative compression
 
@@ -180,10 +163,8 @@ HEADROOM_VERBOSITY_AUTOTUNE=off \
 codex-headroom
 ```
 
-Use the appropriate port and wrapper for other clients. This restores the old
-lossless/no-Kompress policy, not the old incomplete profile initialization. Native
-coding defaults such as read protection still apply. Direct `headroom proxy`
-commands remain unmanaged and do not receive Kit's OpenAI exception.
+Use the matching port and wrapper for other clients. Native read protection still
+applies. Direct `headroom proxy` commands are unmanaged, without Kit's exception.
 
 ## Local metrics and storage
 

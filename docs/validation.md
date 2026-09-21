@@ -29,24 +29,19 @@ See [development](development.md) for commands and prerequisites.
 
 ## Native compression profiles
 
-The change for [#18](https://github.com/ruarfff/headroom-kit-nix/issues/18) remains
-in this repository while the runtime migration in #11 is open.
+`tests/smoke_compression.py` runs real Headroom **0.37.0** with temporary homes,
+fake credentials, and local HTTP providers. [Run it here](development.md#compression-comparison).
 
-Before changing settings, the existing default-workspace persistent counters
-recorded **375 requests**, **196,808 saved tokens**, and **31,780,255 input tokens**
-across two managed proxies. Only aggregate numeric counters were inspected;
-existing proxies, credentials, and ledgers were not changed. These mixed live
-workloads are a baseline snapshot, not a controlled comparison or an all-time
-`headroom savings` report.
+Before the change, two managed proxies reported **375 requests**, **196,808 saved
+tokens**, and **31,780,255 input tokens**. These mixed-workload counters are a
+baseline, not a controlled comparison. Only aggregate counters were read; live
+proxies and ledgers were unchanged.
 
-`tests/smoke_compression.py` compares the old non-Copilot switches with the new
-managed coding profile on the same Headroom **0.37.0** runtime. Thirty cases cover
-JSON, search output, build logs, short output, and source reads across Responses,
-Chat Completions, and Anthropic Messages, each with and without streaming.
-Token counts use `cl100k_base` over serialized message/input arrays, not provider
-billing counts. Tool schemas are counted separately.
+### Default-profile comparison
 
-One Apple Silicon run produced:
+Thirty cases compare the old switches with the managed coding profile: JSON,
+searches, logs, short output, and reads across three protocols, with and without
+streaming. One Apple Silicon run produced:
 
 | Measurement | Old switches | Native profile with OpenAI exception |
 | --- | ---: | ---: |
@@ -54,62 +49,66 @@ One Apple Silicon run produced:
 | Forwarded input tokens | 52,446 | 44,790 |
 | Input reduction | 14.74% | 27.19% |
 | Tool-schema tokens saved | 0 | 0 |
-| Median compression-path time | 10.03 ms | 12.22 ms |
-| Maximum compression-path time | 198.41 ms | 261.69 ms |
-| Median request time with local fake upstream | 11.32 ms | 13.96 ms |
-| Proxy process startup | 2.38 s | 1.91 s |
+| Median compression-path time | 9.47 ms | 11.44 ms |
+| Median request time | 10.69 ms | 13.20 ms |
+| Proxy process startup | 1.76 s | 1.74 s |
 
-Additional savings came from the Anthropic JSON fixture: **5,032 → 1,204**
-forwarded tokens per request compared with the old switches. OpenAI fixtures stayed
-at the old compression level because of the retrieval exception below. Small
-schemas did not exercise tool-search savings. These are fixture results, not a
-savings target or a production latency benchmark. Compression-path time measures
-from request submission to the first upstream arrival: an upper bound that also
-includes local HTTP, parsing, queueing, and serialization. Cache and CPU conditions
-were not held constant. Startup excludes uv resolution and completed model download.
-Kompress dependencies and AST imports were available, but this run does not
-establish warm-model inference performance.
+The extra JSON savings (**5,032 → 1,204** forwarded tokens per Anthropic request)
+come from **lossless tabular conversion**, not lossy compression. OpenAI results
+stay unchanged. Counts use `cl100k_base` over serialized messages, not billing
+usage. Small schemas do not exercise tool-search savings.
 
-Exact file-read and short-output checks passed, as did inbound tool-call structure,
-streaming, and stable multi-turn prefixes. All four profiles were parsed through
-Headroom's real CLI for each managed proxy kind; explicit native overrides won.
-Wrapper tests cover incompatible-setting rejection and explicit stop/relaunch,
-including Copilot and editor routes.
+Timing is an uncontrolled local sample. Compression-path time includes HTTP,
+parsing, queueing, and serialization; startup excludes uv and model downloads.
 
-Four separate CCR checks passed with **zero retrieval failures**: Anthropic and
-Responses, streaming and non-streaming. They place known omitted content in the
-real shared SQLite compression store and require it to return through the proxy's continuation
-flow. Responses checks explicitly declare the retrieval tool. This isolates
-retrieval from compressor selection; it does not prove arbitrary lossy output is
-accurate. The comparison has no provider cache-hit or task-success measurements.
-Live routing results in later sections predate this compression change and were
-not rerun for it.
+Reads, short output, tool calls, streaming, and stable prefixes pass. All four
+profiles parse through the real CLI for every proxy kind. Selecting only `log`
+leaves JSON unchanged; wrapper tests reject changed selections, including shared
+Copilot, without weakening routing, auth, or privacy filters.
+
+### Lossy compression and recovery
+
+Two additional Anthropic cases use native **LogCompressor**, not a seeded store.
+Each starts a fresh proxy and workspace with `log` selected, token mode, lossless
+off, a 128-token minimum, and proactive CCR expansion off. Model downloads are
+disabled for these cases.
+
+| Client mode | Input tokens | Forwarded tokens | Lines omitted and recovered |
+| --- | ---: | ---: | ---: |
+| Non-streaming | 2,268 | 262 | 172 of 181 |
+| Streaming | 2,267 | 255 | 172 of 181 |
+
+Both passed with zero retrieval failures. The checks require the native
+`router:tool_result:log` transform, its generated `Retrieve more: hash=…` marker,
+the exact stored original, and every omitted line in the continuation's result. Compression or retrieval being skipped
+fails the test. Forcing lossless mode fails as expected.
+
+Counts cover the first provider request. Retrieval adds 114 tool-schema tokens
+and a second request; this tests recovery, not net savings.
+
+The streaming case returns complete SSE through Headroom's **buffered CCR path**;
+both provider requests are non-streaming. This does not test native provider SSE
+tool-call interception. Four seeded-store checks separately cover retrieval
+transport for Anthropic and Responses; Responses declares the tool explicitly.
+
+Kompress inference, production savings, cache-hit rates, and task quality remain
+unmeasured. One run hit a native `recursive_mutex` abort; a repeat passed. Its
+cause is unresolved. Live routing results below predate this compression change.
 
 ### OpenAI retrieval exception
 
-The same script reproduces three gaps in the pinned release using a real stored
-marker, synthetic tool output, and a fake upstream:
+The script reproduces three gaps in Headroom 0.37.0:
 
 - Responses forwards the marker without injecting `headroom_retrieve`. Retrieval
   works only when the request already declares that tool.
 - Direct non-streaming Chat injects the tool but returns its call to the client
-  without server-side continuation. The native backend-adapter path has different
-  behaviour; this check covers Kit's direct route.
-- Streaming Chat deliberately omits retrieval-tool injection because that path
-  cannot intercept the tool call.
+  without continuation. This check does not cover the native backend adapter.
+- Streaming Chat omits retrieval-tool injection; it cannot intercept the call.
 
-Managed agents cannot be assumed to implement Headroom's injected tools. Kit
-therefore derives a **native lossless OpenAI pipeline** at server startup. It does
-not copy compression algorithms or change the Anthropic pipeline, routing, auth,
-semantic caching, or rate limiting. This also protects OpenAI-wire Copilot traffic.
-The script checks the pipeline split and the gaps. Remove the exception only after
-those routes pass automatic retrieval checks without client-provided tooling.
-
-See the pinned [Responses and Chat handlers](https://github.com/headroomlabs-ai/headroom/blob/v0.37.0/headroom/proxy/handlers/openai.py),
-especially `_should_inject_openai_chat_ccr_tool`,
-`_compress_openai_responses_live_text_units_with_router`, and the direct response
-path. [Run the comparison](development.md#compression-comparison) to reproduce it;
-no provider credentials or paid calls are needed.
+Kit keeps a **native lossless OpenAI pipeline**, including OpenAI-wire Copilot.
+Keep this exception until those routes pass automatic retrieval without
+client-provided tooling. Anthropic and the routing/auth policies are unchanged.
+See the [pinned handlers](https://github.com/headroomlabs-ai/headroom/blob/v0.37.0/headroom/proxy/handlers/openai.py).
 
 ## Real clients
 
