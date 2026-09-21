@@ -15,7 +15,7 @@ flowchart LR
 
 ## Quick start
 
-You need **Nix with flakes** and an installed, signed-in coding agent.
+You need **Nix with flakes** and an installed, configured coding agent.
 Runtime checks cover Apple Silicon macOS; [Linux is unverified](docs/validation.md).
 
 ```sh
@@ -52,20 +52,18 @@ and NixOS/nix-darwin without Home Manager.
 
 | Command | Setup |
 | --- | --- |
-| `codex-headroom` | Use your existing Codex sign-in |
-| `copilot-headroom` / `copilot-headroom --model <model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first; native model selection, including `auto` |
-| `pi-headroom --provider openai --model <model-id>` | [Configure Pi](docs/usage.md#pi) with an OpenAI or Anthropic API key |
-| `pi-headroom --provider github-copilot --model <model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first |
-| `opencode-headroom` | [Configure OpenCode v2](docs/usage.md#opencode-v2) with an OpenAI or Anthropic API key |
-| `opencode-headroom run --model github-copilot/<model-id>` | [Authorize Headroom for Copilot](docs/usage.md#copilot-cli) first |
-| `copilot-vscode-headroom .` | [Authorize Copilot](docs/usage.md#copilot-in-vs-code); opens an isolated VS Code Stable profile |
-| `codex-app-headroom` | Quit the macOS Codex app first; [experimental routing](docs/usage.md#codex-macos-app) |
-| `headroom` | Run the Headroom CLI directly |
+| `codex-headroom` | Existing Codex sign-in |
+| `copilot-headroom [--model <model-id>]` | [Headroom Copilot login](docs/usage.md#copilot-cli); supports native selection and `auto` |
+| `pi-headroom --provider <provider> --model <model-id>` | [Pi setup](docs/usage.md#pi) |
+| `opencode-headroom` | [OpenCode v2 setup](docs/usage.md#opencode-v2) |
+| `copilot-vscode-headroom .` | [Copilot setup](docs/usage.md#copilot-in-vs-code); isolated VS Code profile |
+| `codex-app-headroom` | Quit the app first; [experimental routing](docs/usage.md#codex-macos-app) |
+| `headroom` | Headroom CLI |
 | `headroom-kit status` / `headroom-kit stop <port>` | Inspect or stop shared proxies |
 
-Compatible sessions share a proxy that outlives the client. `headroom-kit stop`
-interrupts everyone on that port. See [proxy lifetime](docs/usage.md#proxy-lifetime)
-before upgrading from `v0.1.0`.
+Shared proxies stay up after clients exit. **Stopping one interrupts every client
+on its port.** See [proxy lifetime](docs/usage.md#proxy-lifetime) and
+[migration from v0.1.0](docs/usage.md#migration-and-rollback).
 
 ## Set up with an agent
 

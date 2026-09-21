@@ -5,6 +5,7 @@ import contextlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -55,7 +56,15 @@ def endpoint() -> Iterator[tuple[int, list[tuple[str, bool, str | None]]]]:
 
 
 @contextlib.contextmanager
-def copilot_login(home: Path, model: str | None, credential: str | None) -> Iterator[None]:
+def copilot_login(
+    agent: str,
+    executable: str,
+    home: Path,
+    env: dict[str, str],
+    model: str,
+    credential: str | None,
+    discovery: str,
+) -> Iterator[None]:
     auth = {}
     if credential == "oauth":
         auth["github-copilot"] = {
@@ -66,13 +75,56 @@ def copilot_login(home: Path, model: str | None, credential: str | None) -> Iter
             "availableModelIds": [model],
         }
     elif credential == "api_key":
-        auth["github-copilot"] = {"type": "api_key", "key": "fake-saved-copilot-key"}
-    path = home / ".pi/agent/auth.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    original = json.dumps(auth).encode()
-    path.write_bytes(original)
-    yield
-    assert path.read_bytes() == original, "Pi credentials changed"
+        auth["github-copilot"] = {
+            "type": "api_key" if agent == "pi" else "key",
+            "key": "fake-saved-copilot-key",
+        }
+    if agent == "opencode":
+        # Fresh v2 databases do not import auth.json. Initialize the real schema first.
+        result = subprocess.run(
+            [executable, "models", "--standalone"],
+            cwd=home,
+            env=dict(env, NO_PROXY="*", no_proxy="*"),
+            capture_output=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, "OpenCode database initialization failed"
+        value = auth["github-copilot"]
+        if credential == "oauth":
+            value.pop("availableModelIds")
+            value["methodID"] = "device"
+            value["metadata"] = {"apiEndpoint": discovery}
+        original = json.dumps(value)
+        database = f"file:{home}/data/opencode/opencode.db?mode=rw"
+        with sqlite3.connect(database, uri=True) as db:
+            db.execute(
+                "INSERT INTO credential "
+                "(id, integration_id, label, value, active, time_created, time_updated) "
+                "VALUES ('cred_fake', 'github-copilot', 'Local routing test', ?, 1, 0, 0)",
+                (original,),
+            )
+        yield
+        with sqlite3.connect(database, uri=True) as db:
+            rows = db.execute(
+                "SELECT value, active FROM credential WHERE id = 'cred_fake'"
+            ).fetchall()
+        assert rows == [(original, 1)], "OpenCode changed the fake login"
+    else:
+        path = home / ".pi/agent/auth.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        original = json.dumps(auth).encode()
+        path.write_bytes(original)
+        yield
+        assert path.read_bytes() == original, "Pi credentials changed"
+
+
+def expected_paths(agent: str, provider: str, model: str) -> set[str]:
+    if provider != "github-copilot":
+        return {"/v1/responses"} if provider == "openai" else {"/v1/messages"}
+    if model.startswith("claude-"):
+        return {"/v1/messages"}
+    path = "/responses" if model.startswith("gpt-") else "/chat/completions"
+    return {path} if agent == "pi" else {path, "/v1" + path}
 
 
 def check(
@@ -85,9 +137,6 @@ def check(
 ) -> None:
     with (
         tempfile.TemporaryDirectory(prefix="headroom-agent-routing-") as temporary,
-        copilot_login(Path(temporary), model, credential)
-        if provider == "github-copilot"
-        else contextlib.nullcontext(),
         endpoint() as (port, cache_requests),
         endpoint() as (copilot_port, copilot_requests),
         endpoint() as (bypass_port, bypassed),
@@ -156,6 +205,11 @@ def check(
                 },
                 "permissions": [{"action": "*", "resource": "*", "effect": "deny"}],
             }
+            if provider == "github-copilot" and model.startswith("claude-"):
+                # Match Copilot's discovered Messages route without fetching its catalog.
+                content["providers"][provider]["models"][model]["package"] = (
+                    "@opencode/ai/providers/anthropic"
+                )
             args = [
                 "run",
                 "--print-logs",
@@ -181,18 +235,25 @@ def check(
             "session(cfg, command, args, '0.37.0', authorize=lambda: CopilotAuth('https://api.githubcopilot.com', 'fake-headroom-refresh'), start_proxy=lambda *args: 'http://127.0.0.1:' + str(args[3]))\n"
             "assert dict(os.environ) == original\n"
         )
-        result = subprocess.run(
-            [sys.executable, str(launcher), json.dumps([cfg, f"{agent}-headroom", args])],
-            env=env,
-            cwd=root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        with (
+            copilot_login(
+                agent, executable, root, env, model, credential, direct.removesuffix("/v1")
+            )
+            if provider == "github-copilot"
+            else contextlib.nullcontext()
+        ):
+            result = subprocess.run(
+                [sys.executable, str(launcher), json.dumps([cfg, f"{agent}-headroom", args])],
+                env=env,
+                cwd=root,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
         assert result.returncode == 0, result.stderr
         assert config.read_bytes() == original
-        expected = "/v1/responses" if provider == "openai" else "/v1/messages"
+        expected = expected_paths(agent, provider, model)
         routed = cache_requests
         if provider == "github-copilot":
             routed = copilot_requests
@@ -200,12 +261,11 @@ def check(
             assert all(placeholder for _, placeholder, _ in routed), (
                 "Copilot token was not replaced"
             )
-            if model.startswith("gpt-"):
-                expected = "/responses"
-            elif model.startswith("gemini-"):
-                expected = "/chat/completions"
+            if agent == "opencode":
+                # Account catalog discovery stays native; only model requests must be routed.
+                bypassed = [request for request in bypassed if request[0] != "/models"]
         assert (
-            any(path.split("?", 1)[0] == expected and sent == model for path, _, sent in routed)
+            any(path.split("?", 1)[0] in expected and sent == model for path, _, sent in routed)
             and not bypassed
             and not forwarded
         ), (
@@ -254,11 +314,11 @@ def main() -> None:
             ],
         )
     for agent, executable in agents:
-        if agent == "pi":
-            for model in ("claude-sonnet-5", "gemini-3.8-flash", "gpt-5.4"):
-                for credential in ("oauth", "api_key", None):
-                    for mode in ("ordinary", "wildcard"):
-                        check(agent, executable, "github-copilot", mode, model, credential)
+        credentials = ("oauth", "api_key", None) if agent == "pi" else ("oauth", "api_key")
+        for model in ("claude-sonnet-5", "gemini-3.8-flash", "gpt-5.4"):
+            for credential in credentials:
+                for mode in ("ordinary", "wildcard"):
+                    check(agent, executable, "github-copilot", mode, model, credential)
         for provider in ("openai", "anthropic"):
             for mode in ("ordinary", "wildcard"):
                 check(agent, executable, provider, mode)

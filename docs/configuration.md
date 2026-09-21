@@ -1,7 +1,7 @@
 # Configuration
 
-Start with the [quick setup](../README.md#quick-start). Settings are optional;
-environment variables override Nix options for one launch.
+The [quick setup](../README.md#quick-start) uses the defaults below.
+Environment variables override Nix options for one launch.
 
 ## Nix integration
 
@@ -16,8 +16,8 @@ or `home-manager.extraSpecialArgs` (Home Manager as a system module).
 
 ### Home Manager
 
-Default wrappers: `headroom`, `headroom-kit`, `codex-headroom`, and `copilot-headroom`.
-Pick others with `wrappers`; `headroom` and the control command are always included.
+The module includes `headroom`, `headroom-kit`, and the Codex/Copilot CLI wrappers.
+Change `wrappers` to select clients; `headroom` and the control command stay included.
 
 ```nix
 { inputs, ... }:
@@ -31,8 +31,6 @@ Pick others with `wrappers`; `headroom` and the control command are always inclu
   };
 }
 ```
-
-Wrappers start their runtime on demand.
 
 ### Without the Kit module
 
@@ -62,14 +60,13 @@ HEADROOM_VERSION=latest codex-headroom
 ```
 
 Exact versions fail without fallback. `latest` refreshes, skips prereleases, and
-prints the resolved version. A Kit tag pins launcher code; `HEADROOM_VERSION` pins
-the Headroom runtime. Neither locks every Python dependency.
+prints the resolved version. Kit tags pin launcher code; `HEADROOM_VERSION` selects
+the runtime. Neither locks every Python dependency.
 
-uv uses Nix Python in an isolated tool environment. It keeps your user/system index
-and auth, ignores project `uv.toml`/`pyproject.toml`, and will not download Python
-or load dotenv. Explicit uv env still applies. Keep credentials out of Nix and
-source control.
-See [uv configuration](https://docs.astral.sh/uv/concepts/configuration-files/).
+uv uses Nix Python in an isolated environment, keeping user/system indexes and
+auth. It ignores project `uv.toml`/`pyproject.toml`, does not download Python or
+load dotenv, and honours explicit uv environment variables. Keep credentials out
+of Nix and source control. See [uv configuration](https://docs.astral.sh/uv/concepts/configuration-files/).
 
 ## Options
 
@@ -95,19 +92,18 @@ Home Manager paths are under `programs.headroom-kit`. The last column is
 | `HEADROOM_VSCODE_USER_DATA_DIR` | [Isolated profile](usage.md#copilot-in-vs-code) | `vscode.userDataDir` | `vscodeUserDataDir` |
 | `HEADROOM_VSCODE_EXTENSIONS_DIR` | Existing channel extensions | `vscode.extensionsDir` | `vscodeExtensionsDir` |
 
-Ports are 1–65535. Codex and Copilot need different ports. Copilot CLI and the
-editor can share a port when they share the Headroom OAuth credential. Pi and
-OpenCode each need their own port. Startup timeout is seconds after runtime
-resolution.
+Ports are 1–65535. Codex, Pi, and OpenCode each need a separate port. Copilot CLI
+and the editor can share one with the same Headroom OAuth credential.
+The startup timeout begins after runtime resolution.
 
-Executables are names on `PATH` or single paths, never shell commands. Quote paths
-with spaces. The app path must be a macOS `.app` bundle. Unset an environment
-variable to use the default; empty is an error for the Kit options above.
+Executables are names on `PATH` or single paths, not shell commands. Quote paths
+with spaces; the app path must be a macOS `.app` bundle. Unset a Kit variable to
+use its default. Empty values are errors.
 
 ## Local metrics and storage
 
-Every managed proxy defaults to persistent state and local telemetry. These native
-Headroom environment settings pass through Kit; they do not need Nix options:
+Managed proxies enable persistence and local telemetry by default. These native
+Headroom settings pass through without Nix options:
 
 | Environment variable | Managed proxy default |
 | --- | --- |
@@ -117,20 +113,15 @@ Headroom environment settings pass through Kit; they do not need Nix options:
 | `HEADROOM_SAVINGS_PATH` | `<workspace>/headroom-kit/<port>/proxy_savings.json` |
 | `HEADROOM_SAVINGS_EVENTS_PATH` | `<workspace>/savings_events.jsonl` |
 
-Empty or whitespace-only path overrides use the defaults. Kit expands `~` and
-resolves relative storage paths from the launch directory before detaching the
-proxy, whose working directory is `/`.
+Empty or whitespace-only storage paths use the defaults. Kit expands `~` and
+resolves relative paths from the launch directory before detaching the proxy.
 
-Lifetime counters use a separate file per port because Headroom rewrites that
-file. If you set `HEADROOM_SAVINGS_PATH`, give concurrent proxies distinct files
-or one process can overwrite another's counters. The event ledger supports
-concurrent writers and stays at Headroom's shared default location, so
-`headroom savings` works without extra arguments. For a custom workspace or
-ledger, use the same environment settings when running the report.
+**Give concurrent proxies separate `HEADROOM_SAVINGS_PATH` files.** Headroom
+rewrites each counter file, so sharing one can lose data. The event ledger supports
+concurrent writers; `headroom savings` reads its shared default path. For a custom
+workspace or ledger, use the same environment when running the report.
 
-Storage paths, telemetry, and stateless settings are part of proxy compatibility,
-including Copilot. Changed settings require `headroom-kit stop <port>` and a new
-launch; Kit does not replace an incompatible running proxy.
-
-See [metrics and retention](usage.md#metrics-and-retention) for report scope and
-upgrade limits.
+Storage, telemetry, and stateless settings affect proxy compatibility. After a
+change, run `headroom-kit stop <port>` and relaunch; Kit will not replace an
+incompatible proxy. See [metrics and retention](usage.md#metrics-and-retention)
+for report scope and upgrade limits.
