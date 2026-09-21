@@ -90,92 +90,95 @@ test("Pi pins Copilot auth URLs without replacing native protocols, catalog, or 
   }
 });
 
-test("OpenCode overrides final endpoints and disables model WebSockets", async () => {
-  const endpoint = "http://127.0.0.1:8791/v1";
-  const records = ["openai", "anthropic", "opencode", "github-copilot", "other"].map((id) => ({
-    provider: { id },
-    models: new Map([["model", { id: "model", websocket: true }]]),
-  }));
-  let request;
-  await opencode.setup({
-    options: { endpoint },
-    catalog: {
-      transform: (change) =>
-        change({
-          provider: { list: () => records },
-          model: {
-            update: (provider, model, edit) =>
-              edit(records.find((item) => item.provider.id === provider).models.get(model)),
-          },
-        }),
-    },
-    session: {
-      hook: (name, handler) => {
-        assert.equal(name, "model.request");
-        request = handler;
-      },
-    },
-  });
-  for (const { provider, models } of records) {
-    const supported = provider.id !== "other" && provider.id !== "github-copilot";
-    assert.equal(models.get("model").websocket, !supported);
-    for (const kind of ["primary", "title", "compaction", "generate"]) {
-      const event = {
-        model: { providerID: provider.id },
-        kind,
-        baseURL: "http://other.example.invalid",
-        headers: { authorization: "Bearer fake-test-key" },
+for (const api of ["model", "catalog"]) {
+  for (const copilot of [undefined, "http://127.0.0.1:8787/v1"]) {
+    test(`OpenCode ${api} API routes native and SDK requests (Copilot: ${!!copilot})`, async (t) => {
+      const endpoint = "http://127.0.0.1:8791/v1";
+      const records = ["openai", "anthropic", "opencode", "github-copilot", "other"].map((id) => ({
+        provider: { id },
+        models: new Map([["model", { id: "model", providerID: id, websocket: true, package: "native-package" }]]),
+      }));
+      const entries = { list: () => records };
+      const definitions = {
+        update: (provider, model, edit) =>
+          edit(records.find((item) => item.provider.id === provider).models.get(model)),
       };
-      request(event);
-      assert.equal(event.baseURL, supported ? endpoint : "http://other.example.invalid");
-      assert.deepEqual(event.headers, { authorization: "Bearer fake-test-key" });
-    }
-  }
-});
-
-test("OpenCode sends github-copilot at the Copilot proxy with a Headroom placeholder token", async () => {
-  const endpoint = "http://127.0.0.1:8791/v1";
-  const copilot = "http://127.0.0.1:8787/v1";
-  const records = ["openai", "github-copilot", "other"].map((id) => ({
-    provider: { id },
-    models: new Map([["model", { id: "model", websocket: true }]]),
-  }));
-  let request;
-  await opencode.setup({
-    options: { endpoint, copilot },
-    catalog: {
-      transform: (change) =>
-        change({
-          provider: { list: () => records },
-          model: {
-            update: (provider, model, edit) =>
-              edit(records.find((item) => item.provider.id === provider).models.get(model)),
+      const hooks = {};
+      let sdkHook;
+      await opencode.setup({
+        options: { endpoint, copilot },
+        [api]: {
+          transform: (change) => change(api === "model"
+            ? { list: () => records.flatMap(({ models }) => [...models.values()]), ...definitions }
+            : { provider: entries, model: definitions }),
+        },
+        session: { hook: (name, handler) => { hooks[name] = handler; } },
+        aisdk: {
+          hook: (name, handler) => {
+            assert.equal(name, "sdk");
+            sdkHook = handler;
           },
-        }),
-    },
-    session: {
-      hook: (name, handler) => {
-        request = handler;
-      },
-    },
-  });
-  assert.equal(records[0].models.get("model").websocket, false);
-  assert.equal(records[1].models.get("model").websocket, false);
-  assert.equal(records[2].models.get("model").websocket, true);
-  const cache = {
-    model: { providerID: "openai" },
-    baseURL: "http://other.example.invalid",
-    headers: { authorization: "Bearer fake-test-key" },
-  };
-  request(cache);
-  assert.equal(cache.baseURL, endpoint);
-  assert.deepEqual(cache.headers, { authorization: "Bearer fake-test-key" });
-  const event = {
-    model: { providerID: "github-copilot" },
-    baseURL: "http://other.example.invalid",
-    headers: { authorization: "Bearer fake-copilot-token" },
-  };
-  request(event);
-  assert.equal(event.baseURL, copilot);
-  assert.deepEqual(event.headers, { authorization: "Bearer headroom-kit" });
-});
+        },
+      });
+      t.mock.method(globalThis, "fetch", async (request) => request);
+      for (const { provider, models } of records) {
+        const isCopilot = provider.id === "github-copilot" && !!copilot;
+        const supported = isCopilot || ["openai", "anthropic", "opencode"].includes(provider.id);
+        assert.equal(models.get("model").websocket, !supported);
+        assert.equal(models.get("model").package, "native-package");
+        for (const kind of ["primary", "title", "compaction", "generate"]) {
+          const event = {
+            model: { providerID: provider.id },
+            kind,
+            baseURL: "https://other.example.invalid",
+            headers: { authorization: "Bearer fake-test-key" },
+            request: new Request("https://other.example.invalid/v1/messages", {
+              headers: { Authorization: "Bearer fake-test-key", "x-api-key": "fake-key" },
+            }),
+          };
+          hooks["model.request"](event);
+          assert.equal(event.baseURL, isCopilot ? copilot : supported ? endpoint : "https://other.example.invalid");
+          hooks["http.request"](event);
+          assert.equal(event.request.headers.get("authorization"), isCopilot ? "Bearer headroom-kit" : "Bearer fake-test-key");
+          assert.equal(event.request.headers.get("x-api-key"), isCopilot ? null : "fake-key");
+        }
+        const nativeFetch = () => assert.fail("native SDK fetch bypassed Headroom");
+        const nativeSDK = {};
+        const event = {
+          model: { providerID: provider.id },
+          options: { fetch: nativeFetch, endpoint: "responses" },
+          sdk: nativeSDK,
+        };
+        sdkHook(event);
+        assert.equal(event.sdk, nativeSDK);
+        assert.equal(event.options.endpoint, "responses");
+        if (!isCopilot) {
+          assert.equal(event.options.fetch, nativeFetch);
+          continue;
+        }
+        for (const path of ["/responses", "/v1/chat/completions?test=1"]) {
+          const controller = new AbortController();
+          const request = new Request(`https://other.example.invalid${path}`, {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer fake-key",
+              "x-api-key": "fake-key",
+              "X-Interaction-Type": "conversation-agent",
+            },
+            body: '{"model":"native-model"}',
+            signal: controller.signal,
+          });
+          const routed = await event.options.fetch(request);
+          assert.equal(routed.url, `http://127.0.0.1:8787${path}`);
+          assert.equal(routed.method, "POST");
+          assert.equal(routed.headers.get("authorization"), "Bearer headroom-kit");
+          assert.equal(routed.headers.get("x-api-key"), null);
+          assert.equal(routed.headers.get("x-interaction-type"), "conversation-agent");
+          assert.equal(await routed.text(), '{"model":"native-model"}');
+          controller.abort();
+          assert.equal(routed.signal.aborted, true);
+        }
+      }
+    });
+  }
+}

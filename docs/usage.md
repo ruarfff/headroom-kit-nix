@@ -1,7 +1,8 @@
 # Usage and troubleshooting
 
-Shared proxies, Pi, and OpenCode are available from **v0.1.1**. Upgrading from
-v0.1.0: [stop the old wrapper-owned proxies](#migration-and-rollback) first.
+Shared proxies, Pi, and OpenCode are available from **v0.1.1**. When upgrading from
+v0.1.0, [stop the old wrapper-owned proxies](#migration-and-rollback) first.
+Normal agent launches are unchanged.
 
 ## Codex CLI
 
@@ -9,25 +10,24 @@ Sign in with `codex login`, then launch from your project:
 
 ```sh
 codex-headroom
-# or resume a session
 codex-headroom resume --last
 ```
 
 Kit keeps your sign-in, history, working directory, arguments, and terminal input.
-Help and version requests skip Headroom. The wrapper supports Codex's built-in
-OpenAI provider; use normal Codex for custom or local providers.
-API-key routing is [unverified](validation.md).
+Help and version requests skip Headroom. Only the built-in OpenAI provider is
+supported; use normal Codex for custom or local providers. API-key routing is
+[unverified](validation.md).
 
 ## Copilot CLI
 
-1. Sign in with the normal `copilot` CLI, then exit it.
+1. Sign in with normal `copilot`, then exit it.
 2. Authorize Headroom separately:
 
    ```sh
    headroom copilot-auth login
    ```
 
-3. Launch with your normal model selection, or choose one available to your account:
+3. Use your normal model selection, or choose an available model:
 
    ```sh
    copilot-headroom
@@ -35,109 +35,93 @@ API-key routing is [unverified](validation.md).
    copilot-headroom --model <model-id>
    ```
 
-Kit keeps Copilot's native catalog and model routing, including `COPILOT_MODEL`,
-`--model=...`, and in-session `/model` selection. Copilot chooses Responses,
-Completions, or Anthropic Messages; Kit does not keep a model list or force a wire
-API. This requires a Copilot CLI with `COPILOT_API_URL` support, tested with
-**1.0.87-0**. Older builds that ignore this override can bypass Headroom;
-version/capability enforcement is tracked in
-[issue #9](https://github.com/ruarfff/headroom-kit-nix/issues/9).
+Use the same account in Copilot and Headroom so model access matches. Routed
+requests use Headroom's OAuth credential, with access tokens refreshed per
+Copilot integration.
 
-```text
-Copilot model selection → Headroom → GitHub Copilot
-```
+Copilot keeps its native catalog and chooses Responses, Completions, or Messages.
+Kit leaves `COPILOT_MODEL`, `--model=...`, and `/model` selection to the client;
+there is no Kit model list. Inherited `COPILOT_PROVIDER_*` settings are removed
+from the child to prevent BYOK from replacing native routing. Use normal Copilot
+for BYOK providers.
 
-Inherited `COPILOT_PROVIDER_*` settings are removed from the child so BYOK cannot
-replace native routing. Normal Copilot launches are unchanged. Use normal Copilot
-for BYOK providers, not this subscription wrapper.
-
-The shared proxy pins Headroom's OAuth credential and refreshes access tokens per
-Copilot integration. Use the same account for Copilot and Headroom so model access
-matches. Enterprise domains and untested model combinations remain unverified;
-see [validation](validation.md#copilot-cli-model-routing).
+The CLI must support `COPILOT_API_URL`; **1.0.87-0** was tested. Older builds can
+ignore it and bypass Headroom. Capability enforcement is
+[issue #9](https://github.com/ruarfff/headroom-kit-nix/issues/9). See
+[validation](validation.md#copilot-cli-model-routing) for tested models and limits,
+including enterprise domains and interactive switching.
 
 ## Pi
 
-Install [Pi](https://pi.dev), configure an OpenAI or Anthropic **API key** through
-Pi's normal setup, then launch from your project:
+Install [Pi](https://pi.dev) and configure your provider through its normal setup:
 
 ```sh
 pi-headroom --provider openai --model <model-id>
-# ChatGPT Codex login (best effort):
-pi-headroom --provider openai-codex --model gpt-5.6-luna
-# GitHub Copilot through Headroom:
-pi-headroom --provider github-copilot --model <model-id>
-# Or use Anthropic:
 pi-headroom --provider anthropic --model <model-id>
+pi-headroom --provider github-copilot --model <model-id>
 ```
 
-Pi keeps its config, catalog, extensions, skills, history, and sign-in. Kit loads
-a local extension for this process only, including with `--no-extensions`. Resume
-and print-mode arguments pass through.
-Routed providers: `openai`, `openai-codex` (ChatGPT login, `/v1/codex/responses` at
-Headroom), `anthropic`, and `github-copilot`. Copilot traffic uses the shared Copilot
-proxy and [Headroom's Copilot login](#copilot-cli) for upstream requests. Pi keeps
-its native catalog, protocols, and saved-login refresh. Kit pins the local URL and
-placeholder token after Pi resolves auth, so a saved OAuth endpoint cannot bypass
-Headroom. Other providers keep their normal routes.
+OpenAI and Anthropic use API keys. Copilot uses
+[Headroom's login](#copilot-cli); a separate Pi Copilot login is not required.
+An existing Pi login still controls model filtering and follows Pi's normal
+refresh path. `openai-codex` with ChatGPT login is best effort and routes through
+Headroom's `/v1/codex/responses` endpoint.
 
-Tested with Pi **0.85.1** and Copilot Claude, Gemini, and GPT models; see
-[validation](validation.md#pi-copilot-routing). A separate Pi Copilot login is not
-required. An existing Pi login still uses Pi's normal refresh and model filtering.
-See [Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
+Kit loads a local extension for this process, even with `--no-extensions`.
+Config, extensions, skills, history, resume, and print-mode arguments stay intact.
+The extension pins Copilot's URL and placeholder token after auth resolution,
+without replacing native protocols. Other providers keep their normal routes.
+
+Tested with Pi **0.85.1**; see [validation](validation.md#pi-copilot-routing) and
+[Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
 
 ## OpenCode v2
 
-Install [OpenCode v2](https://opencode.ai/v2/docs), then use `/connect` to configure
-an OpenAI or Anthropic **API key** and pick a model:
+Install [OpenCode v2](https://opencode.ai/v2/docs) and use `/connect` in normal
+OpenCode to configure a provider. OpenAI and Anthropic need API keys. For Copilot,
+connect GitHub there and [authorize Headroom](#copilot-cli) separately.
 
 ```sh
 opencode-headroom
 opencode-headroom run --model openai/<model-id> "Explain this project"
+opencode-headroom run --model github-copilot/<model-id> "Explain this project"
 ```
 
-Kit starts a private server with the existing config and leaves the normal
-background service alone. `opencode-headroom ./path` and `opencode-headroom mini`
-work; account and service commands stay on normal `opencode`. OpenCode v1 is rejected.
+Kit starts a private server and leaves the normal background service alone.
+`opencode-headroom ./path` and `mini` also work; use normal `opencode` for account
+and service commands. OpenCode v1 is rejected.
 
-OpenCode 2.0.3 can fail concurrent private-server startup with a JSON bootstrap
-error, including without Kit. Start sessions one at a time if that happens.
-See [validation](validation.md#real-clients).
+The local plugin routes `openai`, `anthropic`, `opencode` (Zen/free, best effort),
+and `github-copilot`, including titles and compaction. It overrides per-model
+endpoints and uses HTTP streaming, not WebSockets. Copilot keeps native model and
+protocol selection, but model requests use the shared Copilot proxy and Headroom's
+credential. Account catalog discovery stays native. Other providers are unchanged.
 
-A local plugin routes `openai`, `anthropic`, `opencode` (Zen/free, best effort),
-and `github-copilot` through Headroom, including titles and compaction. It overrides
-per-model endpoints and uses HTTP streaming, not WebSockets. Copilot traffic uses
-the shared Copilot proxy and [Headroom's Copilot login](#copilot-cli), not OpenCode's.
-OpenCode keeps its native Copilot client; Kit only swaps the token. Other providers
-keep their normal routes.
-Kit appends the plugin to the child's `OPENCODE_CONFIG_CONTENT` (must be a JSON
-object); existing inline settings stay. JSONC files are unchanged.
-
-**Known gap:** Kit's plugin fails to load in OpenCode 2.0.11; Copilot and OpenAI
-requests bypass Headroom ([issue #7](https://github.com/ruarfff/headroom-kit-nix/issues/7)).
-Do not rely on Headroom routing from this version. Use `copilot-headroom` for
-Copilot until that is fixed; a successful OpenCode reply alone does not prove routing.
-See [OpenCode config](https://opencode.ai/v2/docs/config/) and
+Kit appends the plugin to the child's `OPENCODE_CONFIG_CONTENT`, which must be a
+JSON object. Existing inline settings and JSONC files stay intact. See
+[OpenCode config](https://opencode.ai/v2/docs/config/) and
 [plugins](https://opencode.ai/v2/docs/plugins/).
+
+OpenCode **2.0.11** passed local and live routing checks; see
+[validation](validation.md#opencode-copilot-routing), including the certificate
+caveat. **2.0.3** can fail concurrent private-server startup even without Kit;
+start sessions one at a time if you see a JSON bootstrap error.
 
 ## Copilot in VS Code
 
-Complete [Headroom authorization](#copilot-cli), make sure the Copilot extension is
-installed for your channel, then:
+[Authorize Headroom](#copilot-cli) and install the Copilot extension for your channel:
 
 ```sh
 copilot-vscode-headroom .
 HEADROOM_VSCODE_CHANNEL=insiders copilot-vscode-headroom .
 ```
 
-Kit opens a separate profile after the proxy is ready. **Normal settings are
-untouched and Settings Sync is off.** Sign in to GitHub in the new profile if prompted.
-Repeat the command for another window in the same instance.
+Kit opens a separate profile. **Normal settings are untouched; Settings Sync is
+off.** Sign in to GitHub there if prompted. Repeat the command for another window.
 
-**Routed model requests use Headroom's authorized account**, even if the editor
-holds another GitHub credential. Use the same account in both if you want matching
-model listings. Kit does not touch the editor's credential store. Live GUI routing
-is unverified.
+Model requests use **Headroom's account**, even if the editor has another GitHub
+credential. Use matching accounts for consistent model listings. Kit does not
+touch the editor's credential store. Live GUI routing is unverified.
 
 | Default location | Stable | Insiders |
 | --- | --- | --- |
@@ -145,91 +129,90 @@ is unverified.
 | Linux user data | `${XDG_CONFIG_HOME:-~/.config}/Code Headroom` | `${XDG_CONFIG_HOME:-~/.config}/Code - Insiders Headroom` |
 | Existing extensions | `~/.vscode/extensions` | `~/.vscode-insiders/extensions` |
 
-[Override these paths](configuration.md#options) only with a **dedicated Kit
-profile**. `User` symlinks that escape it are rejected, and the checks cannot catch
-concurrent symlink changes, so pick a directory Kit will not mistake for a normal
-profile. One folder or file, no extra editor flags. Remote hosts, SSH, containers,
-and WSL are unverified. See
-[Headroom's editor integration](https://docs.headroomlabs.ai/docs/vscode-copilot).
+[Path overrides](configuration.md#options) must use a **dedicated Kit profile**,
+never normal editor data. Escaping `User` or settings-file symlinks are rejected.
+Pass one file or folder, with no extra editor flags. Remote hosts, SSH, containers,
+and WSL are unverified. See [Headroom's editor integration](https://docs.headroomlabs.ai/docs/vscode-copilot).
 
 ## Codex macOS app
 
-Sign in through the app, use its built-in OpenAI provider, then **quit the app**
-before:
+Sign in through the app, select its built-in OpenAI provider, then **quit it**:
 
 ```sh
 codex-app-headroom
 ```
 
-An already-running app is refused. The launcher returns after opening; the shared
-proxy stays up and Codex CLI can use it. Undocumented hooks; live GUI routing is
-unverified. A fresh Dock launch uses the app's normal settings.
+Kit refuses an already-running app. The launcher returns after opening it; the
+shared proxy stays up and Codex CLI can reuse it. A fresh Dock launch uses normal
+settings. Routing uses undocumented hooks and has not been verified with live GUI
+requests.
 
 ## Proxy lifetime
 
-Wrappers start a compatible proxy if they need one, then share it. Clients and
-terminals can exit; the proxy stays until you stop it. No reference count, launchd
-job, or systemd service.
+Compatible clients share a proxy. It stays up after clients and terminals exit;
+there is no launchd or systemd service.
 
 ```sh
 headroom-kit status
 headroom-kit stop 8788
 ```
 
-**Stop interrupts every client on that port.** It does not close them or replay
-requests. Status/stop use bundled Python and do not download Headroom. Individual
-package installs: `nix run <kit-source>#headroom-kit -- status`, or add
-`headroom-kit-control`. Home Manager already includes it.
+**Stop interrupts every client on that port.** It does not close clients or replay
+requests. Status and stop use bundled Python without downloading Headroom.
+Home Manager includes the control command. For individual packages, add
+`headroom-kit-control` or use `nix run <kit-source>#headroom-kit -- status`.
 
 | Route | Default port | Share when |
 | --- | --- | --- |
 | Codex CLI/app | 8788 | Same configuration |
-| Copilot CLI/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential (model and client env do not matter) |
+| Copilot CLI/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential |
 | Pi | 8790 | Same configuration |
-| OpenCode | 8791 | Same configuration; each client still has its own OpenCode server |
+| OpenCode | 8791 | Same configuration; each client has its own OpenCode server |
 
-A healthy port is not enough. Incompatible proxies and unrelated listeners are left
-alone; stop the managed instance or pick another port. Copilot access-token rotation
-keeps reuse; a new OAuth credential is a new context even for the same account, so
-stop first. Signing out of a client does not revoke the credential the proxy still
-holds. Second Copilot account:
+A healthy port is not enough: incompatible proxies and unrelated listeners are
+left alone. Stop the managed instance or choose another port. Storage and telemetry
+settings also affect [compatibility](configuration.md#local-metrics-and-storage).
+
+Copilot model and client environment changes do not prevent reuse. Access-token
+rotation is handled automatically, but a **new OAuth credential requires a stop**,
+even for the same account. Client sign-out does not revoke the proxy's credential.
+For a second account, authorize Headroom for it and use another port:
 
 ```sh
 HEADROOM_VSCODE_PORT=8789 copilot-vscode-headroom .
 ```
 
-Runtime state is `/tmp/headroom-kit-<uid>` (locks and control sockets, no credentials
-or PID files). Dead proxies recover on the next launch. If you kill the owner and
-Headroom survives, inspect the listener yourself; Kit will not touch an unverified
-process. Do not delete live lock/socket files. Stop proxies before garbage-collecting
-their environment. Reboot stops them.
+Locks and control sockets live in `/tmp/headroom-kit-<uid>`, without credentials or
+PID files. Dead proxies recover on the next launch. If Headroom survives a killed
+owner, inspect the listener yourself; Kit will not kill an unverified process.
+Do not delete live locks or sockets. Stop proxies before garbage-collecting their
+environment. Reboot stops them.
 
 ## Troubleshooting
 
 | Problem | Check |
 | --- | --- |
-| Agent not found | Check the agent with `command -v`; set the [executable option](configuration.md#options) if needed |
-| Runtime download fails | Check the version, uv index access, cache permissions, and CA certificates; use `UV_NATIVE_TLS=true` if needed |
-| Proxy never becomes ready | Try `HEADROOM_VERSION=0.37.0` and a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
-| Port occupied | Use `headroom-kit status` and stop the selected managed port, or choose another port; inspect unknown listeners separately |
-| Copilot auth/model failure | Run `headroom copilot-auth status`; use matching accounts and a model from Copilot's catalog (`gemini`, not `gemma`) |
-| Copilot auth fails only with custom CA settings | Headroom 0.37.0 can negotiate the wrong HTTP protocol with `SSL_CERT_FILE`; see [issue #8](https://github.com/ruarfff/headroom-kit-nix/issues/8). Do not disable certificate verification or assume another login will fix it |
-| Editor settings conflict | Repair JSONC or conflicting endpoint settings in the isolated profile, then restart its wrapper |
+| Agent not found | Check `command -v`; set its [executable option](configuration.md#options) if needed |
+| Runtime download fails | Check version, uv index access, cache permissions, and CA certificates; try `UV_NATIVE_TLS=true` if needed |
+| Proxy never becomes ready | Try Headroom 0.37.0 and a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
+| Port occupied | Inspect `headroom-kit status`; stop the managed port or choose another. Leave unknown listeners alone |
+| Copilot auth/model failure | Check `headroom copilot-auth status`, matching accounts, and available model IDs (`gemini`, not `gemma`) |
+| Copilot auth fails with custom CA settings | `SSL_CERT_FILE` can break token exchange and appear as a login failure; see [#8](https://github.com/ruarfff/headroom-kit-nix/issues/8). Do not disable certificate verification or assume another login will fix it |
+| Editor settings conflict | Repair JSONC or conflicting endpoints in the isolated profile, then restart its wrapper |
 
-Readiness failures stop the launch; there is no direct-connection fallback.
+Readiness failure stops the launch; there is no direct-connection fallback.
 Raw proxy and resolver diagnostics are suppressed because they can contain credentials.
 
 ## Migration and rollback
 
-When replacing another proxy setup, back up settings and remove only its endpoint
-overrides, including shell exports. Keep credentials. Close old clients and stop
-their proxies from the owner terminals first; `headroom-kit status`/`stop` cannot
-adopt wrapper-owned proxies from v0.1.0. Check the ports are free; leave unknown
-listeners alone.
+Back up settings and remove only the old setup's endpoint overrides, including
+shell exports. Keep credentials. Close old clients and stop their proxies from
+the owner terminals. Kit's control commands cannot adopt v0.1.0 wrapper-owned
+proxies. Check the ports are free; leave unknown listeners alone.
 
-To leave Kit, close wrapped clients, stop each port from `headroom-kit status`,
-then use normal commands. Remove Kit from your package list and rebuild. The
-isolated editor profile still points at Headroom until you delete it or unwrap:
+To leave Kit, close wrapped clients, stop its managed ports, remove Kit from your
+package list, and rebuild. Use normal agent commands. The isolated editor profile
+still points at Headroom until you delete it or unwrap it:
 
 ```sh
 headroom unwrap vscode --settings-file '/path/to/isolated/User/settings.json'
@@ -237,77 +220,44 @@ headroom unwrap vscode --settings-file '/path/to/isolated/User/settings.json'
 
 ## Privacy and routing
 
-Managed proxies bind to `127.0.0.1`. External beacons and message logging are off;
-Kit creates no proxy log file. Authentication stays in memory or the client's
-normal credential store, outside Nix and source control.
+Managed proxies bind to `127.0.0.1`. External beacons, full message logging, and
+learning are off. Kit creates no proxy log file. Credentials stay outside Nix
+and source control, in memory or the normal credential stores.
 
-CLI-launched clients bypass forward proxies for loopback. Existing exclusions are
-kept; a wildcard bypass keeps all client traffic direct. Headroom keeps the
-caller's upstream proxy policy. Normal launches and the caller's environment are
-unchanged.
+CLI clients bypass forward proxies for loopback, keeping existing exclusions.
+A wildcard `NO_PROXY` or `no_proxy` makes all client traffic direct and removes
+proxy variables from the child. Headroom keeps the caller's upstream proxy policy;
+the caller's environment is unchanged.
 
-<details>
-<summary>Routing and proxy policy details</summary>
+Codex, Pi, and OpenCode use cache mode with lossless compression. Kompress/fallback,
+semantic cache, rate limiting, output shaping, effort routing, and verbosity
+autotuning are off. Copilot uses standard compression and local dashboard stats.
 
-- Codex gets per-process `model_provider="openai"` and a local `openai_base_url`.
-  Kit groups all `-c` options before a literal `--` so Codex 0.154.0 still sees
-  subcommand overrides. `CODEX_HOME` is unchanged.
-- The macOS app uses `open --env` with `CODEX_APP_SERVER_OPENAI_BASE_URL` and
-  `CODEX_APP_SERVER_FORCE_CLI=1`. Those hooks can change with app updates; shell
-  proxy exclusions do not prove live GUI routing.
-- Copilot CLI gets the local proxy root as `COPILOT_API_URL`, with no BYOK
-  overrides. Its native client keeps model discovery and per-model wire selection.
-  Both OpenAI-shaped and Anthropic-shaped routes target GitHub Copilot. The proxy
-  strips client credentials on Copilot upstream requests and uses its pinned
-  Headroom OAuth context. Access tokens are exchanged per integration ID and
-  refreshed by Headroom.
-- CLI clients merge `NO_PROXY`/`no_proxy` and add `127.0.0.1`, `localhost`, and
-  `::1`. A standalone `*` sets both spellings to `*` and removes HTTP, HTTPS, and
-  ALL proxy variables (both cases) from the client copy only.
-- Codex, Pi, and OpenCode use cache mode with lossless compression.
-  Kompress/fallback, semantic cache, rate limiting, learning, wire debug, output
-  shaping, effort routing, and verbosity autotuning are off. Copilot keeps
-  standard compression and local dashboard stats, with no learning.
-- Every managed proxy defaults to persistent state and local telemetry. Native
-  [metrics and storage settings](configuration.md#local-metrics-and-storage)
-  pass through; other inherited `HEADROOM_*` tuning and upstream overrides are
-  dropped. External beacon uploads and full message logging stay off, with
-  `DO_NOT_TRACK=1`. Direct `headroom` still accepts upstream flags.
-- A detached Kit owner holds the port lock and a reserved TCP socket. Headroom
-  inherits that socket, so another listener cannot win a startup race. The private
-  control socket verifies the live instance; stop never signals a recorded PID.
-- On macOS, Kit sets allocator defaults before spawn and disables Headroom's
-  re-exec so the inherited socket and account adapter stay installed. Tested with
-  Headroom 0.37.0.
-
+[Metrics and storage settings](configuration.md#local-metrics-and-storage) pass
+through to managed proxies. Other inherited `HEADROOM_*` tuning and upstream
+overrides are dropped. Direct `headroom` commands still accept upstream flags.
 See [Headroom proxy controls](https://docs.headroomlabs.ai/docs/proxy).
-
-</details>
 
 ## Metrics and retention
 
-The dashboard and `/stats` include each proxy's persistent lifetime totals
-(`/stats` exposes them under `persistent_savings.lifetime`). These counters
-survive graceful stops and restarts. They are separate from live process counters.
+Persistence and local telemetry are on by default. This permits Headroom's normal
+local state writes, not just counters; it does not enable external beacons or full
+message logging.
 
-`headroom savings` reads the shared event ledger across proxies and retains only
-**30 days**, even where its JSON calls the total `lifetime`. It is not a combined
-all-time report. Kit does not add a report or merge the per-port counter files.
-See Headroom's [savings](https://docs.headroomlabs.ai/docs/savings) and
-[metrics](https://docs.headroomlabs.ai/docs/metrics) documentation.
+- Per-proxy lifetime totals appear in the dashboard and in `/stats` at
+  `persistent_savings.lifetime`; live process counters are separate. Graceful
+  stops flush pending batches; abrupt termination can lose them.
+- `headroom savings` reads the shared event ledger and retains only **30 days**,
+  even where its JSON says `lifetime`. It is not an all-time report. Kit does not
+  merge per-port counter files.
 
-Persistence permits Headroom's normal local state writes, not just counters.
-Local telemetry does not enable the external beacon, full message logging, or
-learning. Compression settings are unchanged. Abrupt termination can still lose
-an unflushed counter batch.
-
-After upgrading, explicitly stop each existing proxy with
-`headroom-kit stop <port>`, then relaunch its wrapper. Previously discarded
-history cannot be recovered. See [storage settings](configuration.md#local-metrics-and-storage)
-for paths and overrides.
+After upgrading, stop existing proxies and relaunch their wrappers. Previously
+discarded history cannot be recovered. See [storage settings](configuration.md#local-metrics-and-storage),
+[Headroom savings](https://docs.headroomlabs.ai/docs/savings), and
+[metrics](https://docs.headroomlabs.ai/docs/metrics).
 
 ## Check routing and compression
 
-The dashboard proves the proxy is up, not that traffic is routed. Compare request
-counters before and after an authorized model request; a direct launch should not
-increment them. Measure compression separately. See [validation](validation.md).
+A working dashboard proves startup, not routing. Compare selected-model request
+counters before and after an authorized model call. A direct launch should not
+increment them. Measure compression separately; see [validation](validation.md).
