@@ -50,10 +50,10 @@ python tests/runtime_smoke.py "$(readlink result)"
 ```
 
 Downloads Headroom 0.37.0 and checks proxy startup/reuse/stop, routing arguments,
-settings preservation, local token refresh, and metrics persistence. It uses fake
-credentials and temporary storage: no model calls or GUI. `--cache-dir` reuses a
-download cache. This runs outside Nix checks because native wheels need runtime
-validation.
+settings preservation, local token refresh, custom CA settings, and metrics
+persistence. It uses fake credentials and temporary storage: no model calls or
+GUI. `--cache-dir` reuses a download cache. This runs outside Nix checks because
+native wheels need runtime validation.
 
 ### Local client routing
 
@@ -122,7 +122,8 @@ It stops the temporary proxy on exit and does not print raw client diagnostics.
 libexec/
 ├── launch.py        isolated entry point
 ├── kit_runtime.py   version resolution and foreground processes
-├── kit_proxy.py     shared owner, status/stop, compatibility, and auth
+├── kit_proxy.py     shared owner, status/stop, and compatibility
+├── kit_copilot.py   subscription auth, refresh policy, and urllib TLS
 ├── kit_session.py   client routing and editor isolation
 ├── pi-extension.mjs temporary Pi endpoint overrides
 └── opencode-plugin/ OpenCode v2 request routing

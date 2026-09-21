@@ -424,6 +424,16 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "headroom 0.37.0\n")
 
+    def test_direct_proxy_disables_allocator_reexec_before_launch(self) -> None:
+        for inherited in ({}, {"HEADROOM_MALLOC_TUNING": "1"}):
+            with self.subTest(inherited=inherited):
+                result = self.run_launcher(
+                    "proxy", command="headroom", mode="startup-failure", env=inherited
+                )
+                self.assertEqual(result.returncode, 7, result.stderr)
+                event = [e for e in self.events() if e["event"] == "proxy-start"][-1]
+                self.assertEqual(event["env"]["HEADROOM_MALLOC_TUNING"], "0")
+
     def test_bad_ports_and_conflicting_providers_fail_before_resolution(self) -> None:
         for env in (
             {"HEADROOM_CODEX_PORT": "0"},
@@ -1072,6 +1082,28 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("copilot-auth login", result.stderr)
         self.assertNotIn("fake-private", result.stderr)
         self.assertEqual([e["event"] for e in self.events()], ["resolve"])
+
+    def test_copilot_transport_and_service_failures_do_not_blame_login(self) -> None:
+        for mode, expected in (
+            ("auth-transport", "transport failed"),
+            ("auth-read", "transport failed"),
+            ("auth-service", "service failed"),
+            ("auth-rejected", "copilot-auth login"),
+        ):
+            with self.subTest(mode=mode):
+                result = self.run_launcher(command="copilot-headroom", mode=mode)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn("fake-private", result.stderr)
+                if mode != "auth-rejected":
+                    self.assertNotIn("copilot-auth login", result.stderr)
+                self.assertTrue(all(e["event"] == "resolve" for e in self.events()))
+
+    def test_copilot_success_after_failed_candidate(self) -> None:
+        result = self.run_launcher(command="copilot-headroom", mode="auth-recovery")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("fake-private", result.stderr)
+        self.assertIn("agent", [e["event"] for e in self.events()])
 
     def test_editor_isolation_preferences_port_and_shared_proxy(self) -> None:
         data = self.root / "isolated editor with spaces"

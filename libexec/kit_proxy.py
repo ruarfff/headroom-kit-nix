@@ -13,14 +13,13 @@ import stat
 import subprocess
 import sys
 import time
-import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from kit_copilot import CopilotAuth, managed_copilot_auth
 from kit_runtime import Config, Json, KitError, privacy, say, terminate
 
 METRICS_ENV = (
@@ -30,12 +29,6 @@ METRICS_ENV = (
     "HEADROOM_SAVINGS_PATH",
     "HEADROOM_SAVINGS_EVENTS_PATH",
 )
-
-
-@dataclass(frozen=True)
-class CopilotAuth:
-    api_url: str
-    refresh_oauth_token: str | None
 
 
 def health(port: int) -> dict[str, Json]:
@@ -114,50 +107,6 @@ def proxy_environment(kind: str, port: int) -> dict[str, str]:
             HEADROOM_VERBOSITY_AUTOTUNE="off",
         )
     return env
-
-
-def copilot_auth() -> CopilotAuth:
-    # The upstream adapter is intentionally narrow; no upstream wrapper lifecycle
-    # (which can restart existing proxies or edit normal agent config) is used.
-    try:
-        from headroom.copilot_auth import resolve_subscription_bearer_token_details
-    except ImportError:
-        raise KitError(
-            "This Headroom release lacks the required Copilot subscription API. "
-            "Select HEADROOM_VERSION=0.37.0."
-        ) from None
-    try:
-        with (
-            open(os.devnull, "w") as sink,
-            contextlib.redirect_stdout(sink),
-            contextlib.redirect_stderr(sink),
-        ):
-            resolution = resolve_subscription_bearer_token_details()
-        if resolution is None:
-            raise ValueError
-        parsed = urllib.parse.urlsplit(resolution.api_url)
-        if (
-            parsed.scheme != "https"
-            or not (parsed.hostname or "").endswith(".githubcopilot.com")
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError
-        if not resolution.refresh_oauth_token:
-            raise ValueError
-        # Pin the reusable credential, not a rotating access token.
-        return CopilotAuth(
-            api_url=resolution.api_url,
-            refresh_oauth_token=resolution.refresh_oauth_token,
-        )
-    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
-        raise KitError(
-            "Copilot subscription authorization failed or its endpoint is unsupported. "
-            "Run `headroom copilot-auth login`, check your subscription, and retry. "
-            "Shared proxies require reusable OAuth and HTTPS *.githubcopilot.com upstreams."
-        ) from None
 
 
 def proxy_args(kind: str, port: int, upstream: str | None) -> list[str]:
@@ -423,22 +372,6 @@ def cleanup_proxy(process: subprocess.Popen[bytes], path: Path) -> None:
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
-
-
-def managed_copilot_auth() -> None:
-    from headroom import copilot_auth as adapter
-
-    upstream_auth = adapter.apply_copilot_api_auth
-
-    async def authenticate(headers: dict[str, str], *, url: str) -> dict[str, str]:
-        # CLI placeholders and editor tokens both use this proxy's pinned account.
-        if adapter.is_copilot_upstream_url(url):
-            headers = {
-                k: v for k, v in headers.items() if k.lower() not in ("authorization", "x-api-key")
-            }
-        return await upstream_auth(headers, url=url)
-
-    adapter.apply_copilot_api_auth = authenticate
 
 
 def serve_main() -> int:

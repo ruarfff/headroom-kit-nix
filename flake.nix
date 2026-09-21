@@ -32,6 +32,7 @@
               nodejs
               uv
               curl
+              openssl
               ruff
               nixfmt
               pre-commit

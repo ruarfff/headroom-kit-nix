@@ -10,9 +10,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from kit_copilot import CopilotAuth, copilot_auth, headroom_main
 from kit_proxy import (
-    CopilotAuth,
-    copilot_auth,
     ensure_proxy,
     locked,
     management,
@@ -421,6 +420,8 @@ def session(
 
 
 def main() -> int:
+    if sys.argv[1] == "__headroom":
+        return headroom_main(sys.argv[2:])
     if sys.argv[1] == "__owner":
         return owner_main()
     if sys.argv[1] == "__serve":
@@ -469,7 +470,19 @@ def main() -> int:
         # Headroom itself also reads this name as a build-version override.
         # Kit owns selection; do not let "latest" replace its reported version.
         env.pop("HEADROOM_VERSION", None)
-        os.execve(python, [python, "-I", "-m", "headroom.cli", *args], privacy(env))
+        # Allocator re-exec would bypass Kit's in-memory TLS adapter.
+        env["HEADROOM_MALLOC_TUNING"] = "0"
+        os.execve(
+            python,
+            [
+                python,
+                "-I",
+                str(Path(__file__).with_name("launch.py").resolve()),
+                "__headroom",
+                *args,
+            ],
+            privacy(env),
+        )
     os.execve(
         python,
         [

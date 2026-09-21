@@ -12,7 +12,7 @@ from pathlib import Path
 from types import ModuleType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "libexec"))
-from kit_proxy import managed_copilot_auth
+from kit_copilot import managed_copilot_auth
 
 
 def main() -> None:
