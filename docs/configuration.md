@@ -100,6 +100,72 @@ Executables are names on `PATH` or single paths, not shell commands. Quote paths
 with spaces; the app path must be a macOS `.app` bundle. Unset a Kit variable to
 use its default. Empty values are errors.
 
+## Compression profiles
+
+Managed wrappers default to Headroom's **`coding`** profile: protected file reads,
+compression of new observations, and stable forwarded prefixes. Kit applies the
+complete native profile before CLI parsing; explicit environment values win.
+Headroom 0.37.0 also provides `balanced`, `general`, and `agent-90`.
+
+```sh
+HEADROOM_SAVINGS_PROFILE=balanced pi-headroom
+HEADROOM_COMPRESSORS=log,search codex-headroom
+```
+
+`HEADROOM_COMPRESSORS` restricts the built-in compressors. Unset it to enable all.
+
+**OpenAI stays lossless** because of Headroom 0.37.0's CCR retrieval gaps, including
+OpenAI-wire Copilot. Aggressive profiles and `HEADROOM_LOSSLESS=0` do not bypass
+this exception. Anthropic uses the selected profile.
+See [validation](validation.md#openai-retrieval-exception).
+
+Overrides cover profiles, targets, compressor selection, lossless/Kompress,
+thresholds, read protection, tool search, deduplication, code-aware compression,
+and CCR. See the [allowlist](../libexec/kit_proxy.py).
+`HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
+also pass through; the default profile does not enable them.
+
+Routing, auth, privacy, process settings, semantic caching, and rate limiting stay
+managed. Disabling CCR or read protection removes those safeguards.
+
+### Downloads and restarts
+
+The runtime includes Tree-sitter and Kompress dependencies. Headroom may download
+`chopratejas/kompress-v2-base` from Hugging Face on first startup. Proxy readiness
+does not mean the model is ready; compression may be reduced until it is.
+Allow cache space and network access, or disable Kompress and its fallback.
+
+Profile and compressor settings must match for reuse, including shared Copilot.
+To change them, stop the proxy and relaunch:
+
+```sh
+headroom-kit stop 8787
+HEADROOM_SAVINGS_PROFILE=balanced copilot-headroom
+```
+
+Stopping interrupts attached clients. All clients sharing a port must use matching
+settings. To restore defaults, unset overrides and stop/relaunch again.
+
+### Conservative compression
+
+To restore the previous conservative compression switches:
+
+```sh
+headroom-kit stop 8788
+HEADROOM_SAVINGS_PROFILE=coding \
+HEADROOM_MODE=cache \
+HEADROOM_LOSSLESS=1 \
+HEADROOM_DISABLE_KOMPRESS=1 \
+HEADROOM_DISABLE_KOMPRESS_FALLBACK=1 \
+HEADROOM_OUTPUT_SHAPER=off \
+HEADROOM_EFFORT_ROUTER=off \
+HEADROOM_VERBOSITY_AUTOTUNE=off \
+codex-headroom
+```
+
+Use the matching port and wrapper for other clients. Native read protection still
+applies. Direct `headroom proxy` commands are unmanaged, without Kit's exception.
+
 ## Local metrics and storage
 
 Managed proxies enable persistence and local telemetry by default. These native

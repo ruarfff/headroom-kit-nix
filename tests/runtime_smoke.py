@@ -69,7 +69,7 @@ def smoke_adapters(env: dict[str, str], root: Path) -> None:
                 "--python",
                 sys.executable,
                 "--from",
-                "headroom-ai[proxy]==0.37.0",
+                "headroom-ai[proxy,code]==0.37.0",
                 "python",
                 "-I",
                 str(Path(__file__).with_name(script).resolve()),
