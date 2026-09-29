@@ -52,21 +52,28 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-Headroom defaults to **0.37.0**:
+This flake pins **Headroom Kit CLI 0.1.0** with the release wheel's SHA-256.
+The CLI requires **Headroom 0.37.0**. Check both installed versions:
 
 ```sh
-HEADROOM_VERSION=0.37.0 codex-headroom
-HEADROOM_VERSION=latest codex-headroom
+headroom-kit --version
 ```
 
-Exact versions fail without fallback. `latest` refreshes, skips prereleases, and
-prints the resolved version. Kit tags pin launcher code; `HEADROOM_VERSION` selects
-the runtime. Neither locks every Python dependency.
+Remove `programs.headroom-kit.version`, the `mkHeadroomKit` `version` argument,
+and `HEADROOM_VERSION` when upgrading. Runtime selection, including `latest`, is
+no longer supported. Updating the CLI pin requires updating its wheel hash.
+Transitive Python dependencies are still resolved by uv at first use.
 
 uv uses Nix Python in an isolated environment, keeping user/system indexes and
 auth. It ignores project `uv.toml`/`pyproject.toml`, does not download Python or
 load dotenv, and honours explicit uv environment variables. Keep credentials out
 of Nix and source control. See [uv configuration](https://docs.astral.sh/uv/concepts/configuration-files/).
+
+The Nix wrappers translate to `headroom-kit --config <generated-file> run <agent> --`.
+`headroom-kit run` uses the same Nix defaults. An explicit `headroom-kit --config
+/path/to/config.json run ...` replaces that file; environment variables still win.
+All commands, including help and status, need the cached CLI environment. Its
+first installation needs network access; later launches can reuse the uv cache.
 
 ## Options
 
@@ -75,7 +82,6 @@ Home Manager paths are under `programs.headroom-kit`. The last column is
 
 | Environment variable | Default | Home Manager | Package argument |
 | --- | --- | --- | --- |
-| `HEADROOM_VERSION` | `0.37.0` | `version` | `version` |
 | `HEADROOM_STARTUP_TIMEOUT` | 180 seconds | `startupTimeout` | `startupTimeout` |
 | `HEADROOM_CODEX_EXECUTABLE` | `codex` | `codex.executable` | `codexExecutable` |
 | `HEADROOM_CODEX_PORT` | 8788 | `codex.port` | `codexPort` |
@@ -121,7 +127,7 @@ See [validation](validation.md#openai-retrieval-exception).
 
 Overrides cover profiles, targets, compressor selection, lossless/Kompress,
 thresholds, read protection, tool search, deduplication, code-aware compression,
-and CCR. See the [allowlist](../libexec/kit_proxy.py).
+and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/src/headroom_kit/proxy.py).
 `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
 also pass through; the default profile does not enable them.
 

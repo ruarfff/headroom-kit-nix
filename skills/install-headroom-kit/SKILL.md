@@ -19,7 +19,7 @@ agent configuration and authentication under their existing owner.
    support is unvalidated; the Codex app launcher is macOS only.
 3. Use the README and `docs/configuration.md` from
    the requested Kit revision. Preserve an existing pin or user-specified revision;
-   otherwise use that README's tagged GitHub input and retain the resulting lock.
+   otherwise use that README's GitHub input and retain the resulting lock.
    Use a `path:` input only when the user selects a local checkout.
    If this skill was installed alone, obtain the docs from that exact GitHub
    revision or Nix input source before applying examples. The source repository is
@@ -35,8 +35,9 @@ agent configuration and authentication under their existing owner.
    The default Home Manager selection includes `headroom`, `headroom-kit` control,
    Codex CLI, and Copilot CLI.
 2. Select only requested wrappers. Use `lib.mkHeadroomKit` when the consumer needs
-   custom packages without Home Manager. Start with the pinned Headroom default;
-   use `latest` only when the user requests it.
+   custom packages without Home Manager. The released CLI pins Headroom 0.37.0;
+   remove the old Nix `version` option and `HEADROOM_VERSION` exports on migration.
+   First use installs the checksum-pinned CLI wheel and its dependencies through uv.
    Add `pi-headroom` or `opencode-headroom` explicitly when requested. These and
    shared proxy support require Kit v0.1.1 or later.
 3. Check executable names and port conflicts. Codex and Copilot must use different
@@ -67,22 +68,22 @@ agent configuration and authentication under their existing owner.
    user's authorization and the consumer's normal workflow. Do not commit or push
    unless requested.
 3. Explain authentication without reading or copying credentials: Codex keeps its
-   existing sign-in; Copilot additionally needs `headroom copilot-auth login` and
+   existing sign-in; Copilot additionally needs `headroom-kit copilot-auth login` and
    `copilot-headroom --model <model-id>`. Let the user complete interactive sign-in.
    Shared Copilot requires reusable OAuth; routed editor requests use Headroom
    authorization even if the editor is signed into another account.
    Pi and OpenCode route OpenAI and Anthropic API keys, plus Pi's ChatGPT Codex
    login, OpenCode Zen/free models, and `github-copilot` through Headroom's Copilot
-   login (`headroom copilot-auth login`). Follow their setup sections in
+   login (`headroom-kit copilot-auth login`). Follow their setup sections in
    `docs/usage.md`; other providers keep their normal routes. OpenCode requires
    v2 and uses a private server.
-4. For requested runtime checks, use the isolated smoke test in
-   `docs/development.md`. It uses no accounts or live GUI apps.
+4. Run `headroom-kit --version` to verify the CLI environment. For requested
+   runtime checks, use the upstream tests linked from `docs/development.md`.
    Authenticated model requests and live GUI changes require explicit authorization.
    Health alone does not prove routed traffic or useful compression.
 5. Explain `headroom-kit status` and `headroom-kit stop <port>`. Shared proxies
    survive client/terminal exit; stop interrupts every attached client. Stop the
-   old proxy explicitly when changing OAuth contexts or Kit/runtime versions.
+   old proxy explicitly when changing OAuth contexts or CLI releases.
 6. Report changed files, actual checks, remaining limitations, and the next required
    user action. Setup is complete when the requested packages build and the user
    has clear launch and rollback instructions. Do not claim untested routes work.

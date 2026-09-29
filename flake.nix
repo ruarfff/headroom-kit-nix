@@ -1,5 +1,5 @@
 {
-  description = "Community-maintained Headroom launchers for existing coding agents";
+  description = "Nix launchers for the released Headroom Kit CLI";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
@@ -29,7 +29,6 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               python313
-              nodejs
               uv
               curl
               openssl
@@ -55,7 +54,6 @@
               {
                 nativeBuildInputs = [
                   pkgs.python313
-                  pkgs.nodejs
                   pkgs.uv
                   pkgs.curl
                   pkgs.ruff
@@ -64,6 +62,9 @@
                   pkgs.actionlint
                   pkgs.shellcheck
                 ];
+                HEADROOM_KIT_WHEEL = import ./nix/cli-wheel.nix { inherit pkgs; };
+                HEADROOM_KIT_PACKAGE = self.packages.${system}.headroom-kit;
+                HEADROOM_KIT_CONFIGURED_PACKAGE = self.checks.${system}.home-manager-module;
               }
               ''
                 cp -r ${./libexec} libexec
@@ -76,7 +77,6 @@
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME"
                 python -m unittest discover -s tests -v
-                node --test tests/test_client_adapters.mjs
                 ruff check libexec tests .github/scripts
                 ruff format --check libexec tests .github/scripts
                 nixfmt --check flake.nix nix/*.nix

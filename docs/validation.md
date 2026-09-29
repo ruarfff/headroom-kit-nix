@@ -1,9 +1,21 @@
 # Validation and limitations
 
-A build proves packaging, not model routing or compression. These results cover
-the checked-out code; they do not apply to every release tag.
+A build proves packaging, not model routing or compression. The detailed runtime
+results below are historical: they cover the bundled implementation before the
+migration to Headroom Kit CLI v0.1.0. They do not validate the new package boundary.
+The CLI now owns routing tests and runtime validation; see its
+[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/docs/validation.md).
+Current Nix checks are described in [development](development.md).
 
-## Platforms
+## CLI migration checks
+
+On Apple Silicon macOS, the package builds and all eight Nix integration/release
+tests pass. The real dependency environment reports `headroom-kit 0.1.0` and
+`headroom-ai 0.37.0`; the retained `headroom --version` command also passes.
+All three target systems evaluate. Linux runtime, proxy startup, and live model
+routing were not retested for this migration.
+
+## Historical platforms
 
 | System | Nix evaluation | Runtime |
 | --- | --- | --- |
@@ -29,8 +41,9 @@ See [development](development.md) for commands and prerequisites.
 
 ## Native compression profiles
 
-`tests/smoke_compression.py` runs real Headroom **0.37.0** with temporary homes,
-fake credentials, and local HTTP providers. [Run it here](development.md#compression-comparison).
+The upstream [`tests/smoke_compression.py`](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/tests/smoke_compression.py)
+runs real Headroom **0.37.0** with temporary homes, fake credentials, and local HTTP
+providers. See its [development instructions](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/docs/development.md).
 
 Before the change, two managed proxies reported **375 requests**, **196,808 saved
 tokens**, and **31,780,255 input tokens**. These mixed-workload counters are a

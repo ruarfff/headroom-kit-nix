@@ -1,27 +1,67 @@
-"""Nix entry point: import only the adjacent immutable Kit implementation."""
+"""Resolve the pinned CLI environment, then hand control to the released package."""
 
-import signal
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def entrypoint() -> None:
-    # Python -I excludes the script directory. Add only this trusted source root.
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from kit_runtime import KitError, say, stop
-    from kit_session import main
+def resolve(uv: str, wheel: str) -> str:
+    result = subprocess.run(
+        [
+            uv,
+            "--no-env-file",
+            "--isolated",
+            "--no-python-downloads",
+            "--python",
+            sys.executable,
+            "--prerelease",
+            "disallow",
+            "--from",
+            wheel,
+            "python",
+            "-I",
+            "-c",
+            "import sys; print(sys.executable)",
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        # Package-index diagnostics can contain credentials.
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    python = result.stdout.strip()
+    if result.returncode or not Path(python).is_absolute() or not os.access(python, os.X_OK):
+        raise RuntimeError(
+            "Cannot install the pinned Headroom Kit CLI with Nix Python 3.13. "
+            "Check network access, uv package indexes, cache permissions, and CA settings."
+        )
+    return python
 
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, stop)
-    try:
-        sys.exit(main())
-    except KitError as error:
-        say(str(error))
-    except (OSError, subprocess.SubprocessError):
-        say("A local process or file operation failed. Check paths, permissions, and disk space.")
-    sys.exit(1)
+
+def main() -> None:
+    uv, wheel, defaults, command, *args = sys.argv[1:]
+    if command == "headroom-kit":
+        # Explicit --config files replace Nix defaults. --version must stand alone.
+        if args[:1] == ["run"]:
+            args = ["--config", defaults, *args]
+    elif command != "headroom":
+        agent = command.removesuffix("-headroom")
+        args = ["--config", defaults, "run", agent, "--", *args]
+    python = resolve(uv, wheel)
+    module = "headroom.cli" if command == "headroom" else "headroom_kit"
+    os.execv(python, [python, "-I", "-m", module, *args])
 
 
 if __name__ == "__main__":
-    entrypoint()
+    try:
+        main()
+    except (OSError, subprocess.SubprocessError):
+        sys.exit(
+            "Headroom Kit: A local process or file operation failed. Check paths and permissions."
+        )
+    except RuntimeError as error:
+        sys.exit(f"Headroom Kit: {error}")
+    except KeyboardInterrupt:
+        sys.exit(130)

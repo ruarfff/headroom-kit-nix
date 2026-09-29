@@ -17,7 +17,6 @@ let
     }).config.home.packages;
   enabled = evaluate {
     enable = true;
-    version = "latest";
     wrappers = [
       "codex-headroom"
       "copilot-vscode-headroom"
@@ -25,7 +24,10 @@ let
       "opencode-headroom"
       "codex-headroom"
     ];
-    codex.port = 18788;
+    codex = {
+      port = 18788;
+      executable = "${pkgs.writeShellScript "headroom-test-agent" "exit 0"}";
+    };
     pi.port = 18790;
     opencode.port = 18791;
     vscode = {
@@ -36,6 +38,13 @@ let
   };
 in
 assert evaluate { enable = false; } == [ ];
+assert
+  !(builtins.tryEval (
+    builtins.deepSeq (evaluate {
+      enable = true;
+      version = "latest";
+    }) true
+  )).success;
 assert
   builtins.map (p: p.name) enabled == [
     "headroom"
