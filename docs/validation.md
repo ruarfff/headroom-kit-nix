@@ -4,14 +4,14 @@ A build proves packaging, not model routing or compression. The detailed runtime
 results below are historical: they cover the bundled implementation before the
 migration to Headroom Kit CLI v0.1.0. They do not validate the new package boundary.
 The CLI now owns routing tests and runtime validation; see its
-[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/docs/validation.md).
+[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/docs/validation.md).
 Current Nix checks are described in [development](development.md).
 
 ## CLI migration checks
 
 On Apple Silicon macOS, the package builds and all eight Nix integration/release
-tests pass. The real dependency environment reports `headroom-kit 0.1.0` and
-`headroom-ai 0.37.0`; the retained `headroom --version` command also passes.
+tests pass. The real dependency environment reports `headroom-kit 0.1.1` and
+`headroom-ai 0.39.1`; the retained `headroom --version` command also passes.
 All three target systems evaluate. Linux runtime, proxy startup, and live model
 routing were not retested for this migration.
 

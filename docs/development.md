@@ -17,7 +17,7 @@ nix develop "path:$PWD" --command pre-commit run anti-slop-python --all-files
 ```
 
 The version command installs the CLI environment on first use. It reports
-Headroom Kit 0.1.0 and Headroom 0.37.0 without starting a proxy. Transitive
+Headroom Kit 0.1.1 and Headroom 0.39.1 without starting a proxy. Transitive
 dependencies and native wheels are downloaded through uv, outside Nix's sandbox.
 Nix verifies the CLI wheel during the package build.
 
@@ -36,7 +36,7 @@ The flake checks:
 
 The local dependency fixture does not test real Headroom imports, native libraries,
 proxy startup, or model routing. Use the upstream
-[runtime checks](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/docs/development.md)
+[runtime checks](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/docs/development.md)
 for that coverage. Live provider requests need explicit authorization.
 
 ## Update the CLI

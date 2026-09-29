@@ -6,7 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
-This flake uses the released [Headroom Kit CLI v0.1.0](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.0).
+This flake uses the released [Headroom Kit CLI v0.1.1](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.1).
 Normal launches keep their settings. Kit does not install agents or system services.
 
 ```mermaid
@@ -24,7 +24,7 @@ nix run github:ruarfff/headroom-kit-nix#codex-headroom
 ```
 
 Nix fetches and verifies the CLI wheel. The first launch installs it and Headroom
-0.37.0 into a cached uv environment using your package-index settings.
+0.39.1 into a cached uv environment using your package-index settings.
 [Version and index policy](docs/configuration.md#versions-and-package-indexes).
 For Copilot, [authorize Headroom](docs/usage.md#copilot-cli) first.
 

@@ -78,7 +78,7 @@ let
 in
 assert lib.assertMsg (
   version == null
-) "Headroom Kit v0.1.0 pins Headroom 0.37.0. Remove the version option and HEADROOM_VERSION.";
+) "Headroom Kit pins its Headroom dependency. Remove the version option and HEADROOM_VERSION.";
 assert lib.assertMsg (builtins.all validPort [
   codexPort
   copilotPort

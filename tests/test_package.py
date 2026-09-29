@@ -16,12 +16,12 @@ from pathlib import Path
 
 
 def make_dependency(index: Path) -> str:
-    filename = "headroom_ai-0.37.0-py3-none-any.whl"
-    info = "headroom_ai-0.37.0.dist-info"
+    filename = "headroom_ai-0.39.1-py3-none-any.whl"
+    info = "headroom_ai-0.39.1.dist-info"
     with zipfile.ZipFile(index / filename, "w") as wheel:
         wheel.writestr(
             f"{info}/METADATA",
-            "Metadata-Version: 2.3\nName: headroom-ai\nVersion: 0.37.0\n"
+            "Metadata-Version: 2.3\nName: headroom-ai\nVersion: 0.39.1\n"
             "Provides-Extra: proxy\nProvides-Extra: code\n",
         )
         wheel.writestr(
@@ -122,7 +122,7 @@ class PackageTest(unittest.TestCase):
                     return result.stdout + result.stderr
 
                 self.assertEqual(
-                    run("headroom-kit", "--version"), "headroom-kit 0.1.0\nheadroom-ai 0.37.0\n"
+                    run("headroom-kit", "--version"), "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n"
                 )
                 self.assertIn(f"/user/simple/headroom-ai/{filename}", requests)
                 self.assertTrue(all(path.startswith("/user/simple/") for path in requests))

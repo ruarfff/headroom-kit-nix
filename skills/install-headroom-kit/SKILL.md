@@ -35,7 +35,7 @@ agent configuration and authentication under their existing owner.
    The default Home Manager selection includes `headroom`, `headroom-kit` control,
    Codex CLI, and Copilot CLI.
 2. Select only requested wrappers. Use `lib.mkHeadroomKit` when the consumer needs
-   custom packages without Home Manager. The released CLI pins Headroom 0.37.0;
+   custom packages without Home Manager. The released CLI pins its Headroom dependency;
    remove the old Nix `version` option and `HEADROOM_VERSION` exports on migration.
    First use installs the checksum-pinned CLI wheel and its dependencies through uv.
    Add `pi-headroom` or `opencode-headroom` explicitly when requested. These and

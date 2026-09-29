@@ -52,8 +52,8 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-This flake pins **Headroom Kit CLI 0.1.0** with the release wheel's SHA-256.
-The CLI requires **Headroom 0.37.0**. Check both installed versions:
+This flake pins **Headroom Kit CLI 0.1.1** with the release wheel's SHA-256.
+The CLI requires **Headroom 0.39.1**. Check both installed versions:
 
 ```sh
 headroom-kit --version
@@ -111,7 +111,7 @@ use its default. Empty values are errors.
 Managed wrappers default to Headroom's **`coding`** profile: protected file reads,
 compression of new observations, and stable forwarded prefixes. Kit applies the
 complete native profile before CLI parsing; explicit environment values win.
-Headroom 0.37.0 also provides `balanced`, `general`, and `agent-90`.
+Headroom also provides `balanced`, `general`, and `agent-90`.
 
 ```sh
 HEADROOM_SAVINGS_PROFILE=balanced pi-headroom
@@ -120,14 +120,14 @@ HEADROOM_COMPRESSORS=log,search codex-headroom
 
 `HEADROOM_COMPRESSORS` restricts the built-in compressors. Unset it to enable all.
 
-**OpenAI stays lossless** because of Headroom 0.37.0's CCR retrieval gaps, including
+**OpenAI stays lossless** because of Headroom's CCR retrieval gaps, including
 OpenAI-wire Copilot. Aggressive profiles and `HEADROOM_LOSSLESS=0` do not bypass
 this exception. Anthropic uses the selected profile.
 See [validation](validation.md#openai-retrieval-exception).
 
 Overrides cover profiles, targets, compressor selection, lossless/Kompress,
 thresholds, read protection, tool search, deduplication, code-aware compression,
-and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/src/headroom_kit/proxy.py).
+and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/src/headroom_kit/proxy.py).
 `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
 also pass through; the default profile does not enable them.
 

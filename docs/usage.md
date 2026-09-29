@@ -1,6 +1,6 @@
 # Usage and troubleshooting
 
-The Nix commands use [Headroom Kit CLI v0.1.0](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.0).
+The Nix commands use [Headroom Kit CLI v0.1.1](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.1).
 Existing wrapper names remain available. For example, `codex-headroom resume --last`
 calls `headroom-kit run codex -- resume --last` with your Nix defaults.
 Read [migration](#migration-and-rollback) before upgrading from the bundled runtime.
@@ -196,7 +196,7 @@ environment. Reboot stops them.
 | --- | --- |
 | Agent not found | Check `command -v`; set its [executable option](configuration.md#options) if needed |
 | Runtime download fails | Check version, uv index access, cache permissions, and CA certificates; try `UV_NATIVE_TLS=true` if needed |
-| Proxy never becomes ready | Try Headroom 0.37.0 and a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
+| Proxy never becomes ready | Check `headroom-kit --version` and use a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
 | Port occupied | Inspect `headroom-kit status`; stop the managed port or choose another. Leave unknown listeners alone |
 | Copilot auth/model failure | Check `headroom-kit copilot-auth status`, matching accounts, and available model IDs (`gemini`, not `gemma`) |
 | Copilot auth fails with custom CA settings | `SSL_CERT_FILE` can break token exchange and appear as a login failure; see [#8](https://github.com/ruarfff/headroom-kit-nix/issues/8). Do not disable certificate verification or assume another login will fix it |
@@ -209,7 +209,7 @@ Raw proxy and resolver diagnostics are suppressed because they can contain crede
 
 Before switching from the bundled runtime, stop its managed proxies with the old
 `headroom-kit stop <port>` command. Remove the Nix `version` option and
-`HEADROOM_VERSION` exports. The released CLI pins Headroom 0.37.0 and rejects those
+`HEADROOM_VERSION` exports. The released CLI pins its Headroom dependency and rejects those
 settings. Keep your ports, executable paths, wrapper list, and editor options.
 After rebuilding, run `headroom-kit --version` and relaunch the selected wrapper.
 To roll back, restore the previous flake lock after stopping the new proxies.
