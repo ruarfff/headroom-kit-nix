@@ -3,6 +3,7 @@
 import functools
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -101,6 +102,38 @@ def local_index(root: Path) -> Iterator[tuple[str, list[str], str]]:
 
 
 class PackageTest(unittest.TestCase):
+    def test_missing_dependency_reinstalls_and_warm_launch_survives_uv_cache_removal(self) -> None:
+        package = Path(os.environ["HEADROOM_KIT_PACKAGE"])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            with local_index(root) as (endpoint, requests, _):
+                env, project, _ = make_environment(root, endpoint)
+
+                def version() -> None:
+                    result = subprocess.run(
+                        [str(package / "bin/headroom-kit"), "--version"],
+                        env=env,
+                        cwd=project,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n")
+
+                version()
+                metadata = next((root / ".cache").rglob("headroom_ai-0.39.1.dist-info/METADATA"))
+                metadata.unlink()
+                env["UV_OFFLINE"] = "1"
+                version()
+                self.assertTrue(metadata.parent.exists(), "complete old environment was removed")
+                self.assertEqual(len(list((root / ".cache").rglob("complete"))), 2)
+                shutil.rmtree(root / "cache")
+                before = requests.copy()
+                version()
+                self.assertEqual(requests, before, "warm launch contacted an index")
+
     def test_released_cli_and_nix_defaults_with_user_index(self) -> None:
         package = Path(os.environ["HEADROOM_KIT_PACKAGE"])
         with tempfile.TemporaryDirectory() as temporary:
@@ -119,13 +152,19 @@ class PackageTest(unittest.TestCase):
                         check=False,
                     )
                     self.assertEqual(result.returncode, expected, result.stderr)
-                    return result.stdout + result.stderr
+                    return result.stdout if expected == 0 else result.stdout + result.stderr
 
                 self.assertEqual(
                     run("headroom-kit", "--version"), "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n"
                 )
                 self.assertIn(f"/user/simple/headroom-ai/{filename}", requests)
                 self.assertTrue(all(path.startswith("/user/simple/") for path in requests))
+                setup_requests = requests.copy()
+                env["UV_OFFLINE"] = "1"
+                for _ in range(3):
+                    self.assertEqual(
+                        run("headroom-kit", "--version"), "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n"
+                    )
                 self.assertEqual(run("headroom"), "headroom fixture\n")
                 self.assertIn("copilot-auth", run("headroom-kit", "--help"))
                 self.assertIn("Agents:", run("headroom-kit", "run", "--help"))
@@ -158,6 +197,7 @@ class PackageTest(unittest.TestCase):
                     "Runtime selection is no longer supported",
                     run("headroom-kit", "run", "codex", "--", expected=1),
                 )
+                self.assertEqual(requests, setup_requests, "warm launch contacted an index")
 
     def test_release_contains_client_resources(self) -> None:
         with zipfile.ZipFile(os.environ["HEADROOM_KIT_WHEEL"]) as wheel:

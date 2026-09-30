@@ -32,6 +32,8 @@ The flake checks:
   working directory, exit codes, client resources, and the removed version option.
 - Check that uv uses user indexes, ignores project indexes, and suppresses resolver
   diagnostics that could contain credentials.
+- Check offline warm launches with no installer, concurrent first setup, failed
+  and interrupted setup recovery, missing dependencies, and a removed uv cache.
 - Run release-planner tests, Ruff, nixfmt, pre-commit config validation, and actionlint.
 
 The local dependency fixture does not test real Headroom imports, native libraries,
@@ -44,8 +46,10 @@ for that coverage. Live provider requests need explicit authorization.
 Change the release URL and SHA-256 in `nix/cli-wheel.nix`. Check the new release's
 configuration keys, agent names, Python requirement, and Headroom dependency.
 Update the package tests and migration documentation, then run the checks above.
-The bootstrap in `libexec/launch.py` only resolves the environment and translates
-the existing command names to the public CLI.
+The bootstrap in `libexec/launch.py` owns installation and local cache validation,
+then translates the existing command names to the public CLI. It does not resolve
+dependencies on a warm launch. Keep setup diagnostics free of index URLs and
+credentials, and keep complete older generations available to existing proxies.
 
 ## Releases
 

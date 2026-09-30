@@ -24,7 +24,8 @@ nix run github:ruarfff/headroom-kit-nix#codex-headroom
 ```
 
 Nix fetches and verifies the CLI wheel. The first launch installs it and Headroom
-0.39.1 into a cached uv environment using your package-index settings.
+0.39.1 into an installed environment using your package-index settings. Later
+launches use that environment directly, without uv resolution or index access.
 [Version and index policy](docs/configuration.md#versions-and-package-indexes).
 For Copilot, [authorize Headroom](docs/usage.md#copilot-cli) first.
 

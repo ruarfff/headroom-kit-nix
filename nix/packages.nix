@@ -56,7 +56,7 @@ let
     name:
     (pkgs.writeShellScriptBin name ''
       exec ${pkgs.python313}/bin/python3.13 -I ${../libexec/launch.py} \
-        ${pkgs.uv}/bin/uvx ${wheel} ${defaults} ${name} "$@"
+        ${pkgs.uv}/bin/uv ${wheel} ${defaults} ${name} "$@"
     '').overrideAttrs
       (old: {
         meta = (old.meta or { }) // {

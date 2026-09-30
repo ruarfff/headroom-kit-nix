@@ -64,16 +64,32 @@ and `HEADROOM_VERSION` when upgrading. Runtime selection, including `latest`, is
 no longer supported. Updating the CLI pin requires updating its wheel hash.
 Transitive Python dependencies are still resolved by uv at first use.
 
-uv uses Nix Python in an isolated environment, keeping user/system indexes and
-auth. It ignores project `uv.toml`/`pyproject.toml`, does not download Python or
-load dotenv, and honours explicit uv environment variables. Keep credentials out
+First setup uses `uv tool install` with Nix Python, keeping user/system indexes
+and auth, including native Keychain settings. It ignores project
+`uv.toml`/`pyproject.toml`, does not download Python or load dotenv, and honours
+explicit uv environment variables. Keep credentials out
 of Nix and source control. See [uv configuration](https://docs.astral.sh/uv/concepts/configuration-files/).
 
 The Nix wrappers translate to `headroom-kit --config <generated-file> run <agent> --`.
 `headroom-kit run` uses the same Nix defaults. An explicit `headroom-kit --config
 /path/to/config.json run ...` replaces that file; environment variables still win.
-All commands, including help and status, need the cached CLI environment. Its
-first installation needs network access; later launches can reuse the uv cache.
+All commands, including help and status, need the installed CLI environment.
+First setup may need network access. Later launches check local package metadata
+and run its Python directly; they do not run uv or contact an index.
+
+Environments live under `$XDG_CACHE_HOME/headroom-kit/environments-v1`, or
+`~/.cache/headroom-kit/environments-v1` when unset. The key contains the pinned
+wheel's Nix store path and the Nix Python identity. A changed wheel or Python
+gets a separate environment; wrapper defaults do not trigger another install.
+Installations copy packages from uv's download cache, so clearing that cache does
+not break a complete environment.
+
+Concurrent first launches share a setup lock. Setup reports safe progress and
+publishes a readiness record only after installation and local validation pass.
+Failed or interrupted setup is retried. Missing interpreters or changed package
+metadata also trigger setup. Complete older generations stay in place because
+running proxies may still use them. Do not remove those environments while in use.
+Resolver diagnostics remain hidden because they can contain authenticated URLs.
 
 ## Options
 
