@@ -1,6 +1,6 @@
 {
   pkgs,
-  version ? "0.37.0",
+  version ? null,
   startupTimeout ? 180,
   codexExecutable ? "codex",
   codexPort ? 8788,
@@ -19,11 +19,11 @@
 }:
 let
   inherit (pkgs) lib;
+  wheel = import ./cli-wheel.nix { inherit pkgs; };
   validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
   defaults = pkgs.writeText "headroom-kit-defaults.json" (
     builtins.toJSON {
       inherit
-        version
         startupTimeout
         codexExecutable
         codexPort
@@ -40,15 +40,8 @@ let
         vscodeUserDataDir
         vscodeExtensionsDir
         ;
-      python = "${pkgs.python313}/bin/python3.13";
-      uv = "${pkgs.uv}/bin/uvx";
     }
   );
-  runtime = pkgs.runCommand "headroom-kit-runtime" { } ''
-    mkdir -p "$out/libexec"
-    cp ${../libexec}/*.py ${../libexec}/*.mjs "$out/libexec/"
-    cp -r ${../libexec}/opencode-plugin "$out/libexec/"
-  '';
   commands = [
     "headroom"
     "headroom-kit"
@@ -62,7 +55,8 @@ let
   packages = lib.genAttrs commands (
     name:
     (pkgs.writeShellScriptBin name ''
-      exec ${pkgs.python313}/bin/python3.13 -I ${runtime}/libexec/launch.py ${defaults} ${name} "$@"
+      exec ${pkgs.python313}/bin/python3.13 -I ${../libexec/launch.py} \
+        ${pkgs.uv}/bin/uv ${wheel} ${defaults} ${name} "$@"
     '').overrideAttrs
       (old: {
         meta = (old.meta or { }) // {
@@ -83,8 +77,8 @@ let
   };
 in
 assert lib.assertMsg (
-  version == "latest" || builtins.match "[0-9]+\\.[0-9]+\\.[0-9]+" version != null
-) "Headroom version must be an exact stable X.Y.Z release or latest";
+  version == null
+) "Headroom Kit pins its Headroom dependency. Remove the version option and HEADROOM_VERSION.";
 assert lib.assertMsg (builtins.all validPort [
   codexPort
   copilotPort

@@ -6,6 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
+This flake uses the released [Headroom Kit CLI v0.1.1](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.1).
 Normal launches keep their settings. Kit does not install agents or system services.
 
 ```mermaid
@@ -16,22 +17,24 @@ flowchart LR
 ## Quick start
 
 You need **Nix with flakes** and an installed, configured coding agent.
-Runtime checks cover Apple Silicon macOS; [Linux is unverified](docs/validation.md).
+The flake targets Apple Silicon macOS and Linux. See [validation limits](docs/validation.md).
 
 ```sh
-nix run github:ruarfff/headroom-kit-nix/v0.1.1#codex-headroom
+nix run github:ruarfff/headroom-kit-nix#codex-headroom
 ```
 
-The first launch downloads Headroom 0.37.0 using your uv package-index settings.
-[Change version or index](docs/configuration.md#versions-and-package-indexes).
+Nix fetches and verifies the CLI wheel. The first launch installs it and Headroom
+0.39.1 into an installed environment using your package-index settings. Later
+launches use that environment directly, without uv resolution or index access.
+[Version and index policy](docs/configuration.md#versions-and-package-indexes).
 For Copilot, [authorize Headroom](docs/usage.md#copilot-cli) first.
 
 ## Install in your Nix configuration
 
-Pin the release:
+Add the input and keep its generated lock entry:
 
 ```nix
-inputs.headroom-kit.url = "github:ruarfff/headroom-kit-nix/v0.1.1";
+inputs.headroom-kit.url = "github:ruarfff/headroom-kit-nix";
 ```
 
 In a Home Manager module that receives `inputs`:
@@ -59,15 +62,15 @@ and NixOS/nix-darwin without Home Manager.
 | `copilot-vscode-headroom .` | [Copilot setup](docs/usage.md#copilot-in-vs-code); isolated VS Code profile |
 | `codex-app-headroom` | Quit the app first; [experimental routing](docs/usage.md#codex-macos-app) |
 | `headroom` | Headroom CLI |
-| `headroom-kit status` / `headroom-kit stop <port>` | Inspect or stop shared proxies |
+| `headroom-kit` | Released CLI: `run`, `copilot-auth`, `status`, `stop`, and `--version` |
 
 Shared proxies stay up after clients exit. **Stopping one interrupts every client
 on its port.** See [proxy lifetime](docs/usage.md#proxy-lifetime) and
-[migration from v0.1.0](docs/usage.md#migration-and-rollback).
+[migration to the released CLI](docs/usage.md#migration-and-rollback).
 
 ## Set up with an agent
 
-Give your agent the [v0.1.1 setup skill](https://github.com/ruarfff/headroom-kit-nix/blob/v0.1.1/skills/install-headroom-kit/SKILL.md).
+Give your agent the [Nix setup skill](skills/install-headroom-kit/SKILL.md).
 
 ## Reference
 

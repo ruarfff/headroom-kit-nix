@@ -1,8 +1,9 @@
 # Usage and troubleshooting
 
-Shared proxies, Pi, and OpenCode are available from **v0.1.1**. When upgrading from
-v0.1.0, [stop the old wrapper-owned proxies](#migration-and-rollback) first.
-Normal agent launches are unchanged.
+The Nix commands use [Headroom Kit CLI v0.1.1](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.1).
+Existing wrapper names remain available. For example, `codex-headroom resume --last`
+calls `headroom-kit run codex -- resume --last` with your Nix defaults.
+Read [migration](#migration-and-rollback) before upgrading from the bundled runtime.
 
 ## Codex CLI
 
@@ -24,7 +25,7 @@ supported; use normal Codex for custom or local providers. API-key routing is
 2. Authorize Headroom separately:
 
    ```sh
-   headroom copilot-auth login
+   headroom-kit copilot-auth login
    ```
 
 3. Use your normal model selection, or choose an available model:
@@ -158,7 +159,8 @@ headroom-kit stop 8788
 ```
 
 **Stop interrupts every client on that port.** It does not close clients or replay
-requests. Status and stop use bundled Python without downloading Headroom.
+requests. Status and stop use the released CLI's cached environment. First use
+installs its dependencies; neither command starts a proxy or downloads models.
 Home Manager includes the control command. For individual packages, add
 `headroom-kit-control` or use `nix run <kit-source>#headroom-kit -- status`.
 
@@ -194,9 +196,9 @@ environment. Reboot stops them.
 | --- | --- |
 | Agent not found | Check `command -v`; set its [executable option](configuration.md#options) if needed |
 | Runtime download fails | Check version, uv index access, cache permissions, and CA certificates; try `UV_NATIVE_TLS=true` if needed |
-| Proxy never becomes ready | Try Headroom 0.37.0 and a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
+| Proxy never becomes ready | Check `headroom-kit --version` and use a free port; increase `HEADROOM_STARTUP_TIMEOUT` for slow startup |
 | Port occupied | Inspect `headroom-kit status`; stop the managed port or choose another. Leave unknown listeners alone |
-| Copilot auth/model failure | Check `headroom copilot-auth status`, matching accounts, and available model IDs (`gemini`, not `gemma`) |
+| Copilot auth/model failure | Check `headroom-kit copilot-auth status`, matching accounts, and available model IDs (`gemini`, not `gemma`) |
 | Copilot auth fails with custom CA settings | `SSL_CERT_FILE` can break token exchange and appear as a login failure; see [#8](https://github.com/ruarfff/headroom-kit-nix/issues/8). Do not disable certificate verification or assume another login will fix it |
 | Editor settings conflict | Repair JSONC or conflicting endpoints in the isolated profile, then restart its wrapper |
 
@@ -204,6 +206,13 @@ Readiness failure stops the launch; there is no direct-connection fallback.
 Raw proxy and resolver diagnostics are suppressed because they can contain credentials.
 
 ## Migration and rollback
+
+Before switching from the bundled runtime, stop its managed proxies with the old
+`headroom-kit stop <port>` command. Remove the Nix `version` option and
+`HEADROOM_VERSION` exports. The released CLI pins its Headroom dependency and rejects those
+settings. Keep your ports, executable paths, wrapper list, and editor options.
+After rebuilding, run `headroom-kit --version` and relaunch the selected wrapper.
+To roll back, restore the previous flake lock after stopping the new proxies.
 
 Back up settings and remove only the old setup's endpoint overrides, including
 shell exports. Keep credentials. Close old clients and stop their proxies from

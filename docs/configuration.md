@@ -52,21 +52,44 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-Headroom defaults to **0.37.0**:
+This flake pins **Headroom Kit CLI 0.1.1** with the release wheel's SHA-256.
+The CLI requires **Headroom 0.39.1**. Check both installed versions:
 
 ```sh
-HEADROOM_VERSION=0.37.0 codex-headroom
-HEADROOM_VERSION=latest codex-headroom
+headroom-kit --version
 ```
 
-Exact versions fail without fallback. `latest` refreshes, skips prereleases, and
-prints the resolved version. Kit tags pin launcher code; `HEADROOM_VERSION` selects
-the runtime. Neither locks every Python dependency.
+Remove `programs.headroom-kit.version`, the `mkHeadroomKit` `version` argument,
+and `HEADROOM_VERSION` when upgrading. Runtime selection, including `latest`, is
+no longer supported. Updating the CLI pin requires updating its wheel hash.
+Transitive Python dependencies are still resolved by uv at first use.
 
-uv uses Nix Python in an isolated environment, keeping user/system indexes and
-auth. It ignores project `uv.toml`/`pyproject.toml`, does not download Python or
-load dotenv, and honours explicit uv environment variables. Keep credentials out
+First setup uses `uv tool install` with Nix Python, keeping user/system indexes
+and auth, including native Keychain settings. It ignores project
+`uv.toml`/`pyproject.toml`, does not download Python or load dotenv, and honours
+explicit uv environment variables. Keep credentials out
 of Nix and source control. See [uv configuration](https://docs.astral.sh/uv/concepts/configuration-files/).
+
+The Nix wrappers translate to `headroom-kit --config <generated-file> run <agent> --`.
+`headroom-kit run` uses the same Nix defaults. An explicit `headroom-kit --config
+/path/to/config.json run ...` replaces that file; environment variables still win.
+All commands, including help and status, need the installed CLI environment.
+First setup may need network access. Later launches check local package metadata
+and run its Python directly; they do not run uv or contact an index.
+
+Environments live under `$XDG_CACHE_HOME/headroom-kit/environments-v1`, or
+`~/.cache/headroom-kit/environments-v1` when unset. The key contains the pinned
+wheel's Nix store path and the Nix Python identity. A changed wheel or Python
+gets a separate environment; wrapper defaults do not trigger another install.
+Installations copy packages from uv's download cache, so clearing that cache does
+not break a complete environment.
+
+Concurrent first launches share a setup lock. Setup reports safe progress and
+publishes a readiness record only after installation and local validation pass.
+Failed or interrupted setup is retried. Missing interpreters or changed package
+metadata also trigger setup. Complete older generations stay in place because
+running proxies may still use them. Do not remove those environments while in use.
+Resolver diagnostics remain hidden because they can contain authenticated URLs.
 
 ## Options
 
@@ -75,7 +98,6 @@ Home Manager paths are under `programs.headroom-kit`. The last column is
 
 | Environment variable | Default | Home Manager | Package argument |
 | --- | --- | --- | --- |
-| `HEADROOM_VERSION` | `0.37.0` | `version` | `version` |
 | `HEADROOM_STARTUP_TIMEOUT` | 180 seconds | `startupTimeout` | `startupTimeout` |
 | `HEADROOM_CODEX_EXECUTABLE` | `codex` | `codex.executable` | `codexExecutable` |
 | `HEADROOM_CODEX_PORT` | 8788 | `codex.port` | `codexPort` |
@@ -105,7 +127,7 @@ use its default. Empty values are errors.
 Managed wrappers default to Headroom's **`coding`** profile: protected file reads,
 compression of new observations, and stable forwarded prefixes. Kit applies the
 complete native profile before CLI parsing; explicit environment values win.
-Headroom 0.37.0 also provides `balanced`, `general`, and `agent-90`.
+Headroom also provides `balanced`, `general`, and `agent-90`.
 
 ```sh
 HEADROOM_SAVINGS_PROFILE=balanced pi-headroom
@@ -114,14 +136,14 @@ HEADROOM_COMPRESSORS=log,search codex-headroom
 
 `HEADROOM_COMPRESSORS` restricts the built-in compressors. Unset it to enable all.
 
-**OpenAI stays lossless** because of Headroom 0.37.0's CCR retrieval gaps, including
+**OpenAI stays lossless** because of Headroom's CCR retrieval gaps, including
 OpenAI-wire Copilot. Aggressive profiles and `HEADROOM_LOSSLESS=0` do not bypass
 this exception. Anthropic uses the selected profile.
 See [validation](validation.md#openai-retrieval-exception).
 
 Overrides cover profiles, targets, compressor selection, lossless/Kompress,
 thresholds, read protection, tool search, deduplication, code-aware compression,
-and CCR. See the [allowlist](../libexec/kit_proxy.py).
+and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/src/headroom_kit/proxy.py).
 `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
 also pass through; the default profile does not enable them.
 

@@ -1,9 +1,51 @@
 # Validation and limitations
 
-A build proves packaging, not model routing or compression. These results cover
-the checked-out code; they do not apply to every release tag.
+A build proves packaging, not model routing or compression. The detailed runtime
+results below are historical: they cover the bundled implementation before the
+migration to Headroom Kit CLI v0.1.0. They do not validate the new package boundary.
+The CLI now owns routing tests and runtime validation; see its
+[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/docs/validation.md).
+Current Nix checks are described in [development](development.md).
 
-## Platforms
+## CLI migration checks
+
+On Apple Silicon macOS, the package builds and all 14 Nix integration/release
+tests pass. The real dependency environment reports `headroom-kit 0.1.1` and
+`headroom-ai 0.39.1`; the retained `headroom --version` command also passes.
+All three target systems evaluate. Linux runtime, proxy startup, and live model
+routing were not retested for this migration.
+
+## Launcher startup
+
+On 2026-09-29, an Apple Silicon macOS run used CLI 0.1.1 and Headroom 0.39.1,
+a new private launcher environment, the existing uv download cache, and the
+machine's unchanged uv index/auth settings. Warm checks set `UV_OFFLINE=1`.
+
+| Check | Time |
+| --- | ---: |
+| First setup and `headroom-kit --version` | 64.44 seconds |
+| Warm `headroom-kit --version`, median of five | 0.185 seconds |
+| Warm `copilot-headroom --help`, stand-in agent, median of five | 0.195 seconds |
+
+Version samples ranged from 0.174 to 0.213 seconds. Wrapper-help samples ranged
+from 0.187 to 0.438 seconds. These are local wall-clock measurements, not a
+cross-platform performance guarantee. First setup still needs dependency
+resolution and can be slow; subsequent launches do not run uv.
+
+Regression tests run the pinned wheel against a local index and assert no new
+index requests after setup. They also remove the installer for repeated warm
+launches, test four concurrent first launches, recover from failed/interrupted
+setup, repair missing dependency metadata, and remove the test's uv download
+cache without breaking the installed environment. Setup preserves native-auth
+settings; fresh Keychain login and credential expiry were not tested.
+
+Local checks validate the interpreter, package metadata, and Headroom presence.
+They do not checksum every installed file. Cold setup with an empty download
+cache, Linux runtime timings, full Copilot startup, and live proxy routing were
+not measured. The cause of the reported Artifactory 304 responses remains
+unconfirmed. Existing proxies and unrelated caches were unchanged.
+
+## Historical platforms
 
 | System | Nix evaluation | Runtime |
 | --- | --- | --- |
@@ -29,8 +71,9 @@ See [development](development.md) for commands and prerequisites.
 
 ## Native compression profiles
 
-`tests/smoke_compression.py` runs real Headroom **0.37.0** with temporary homes,
-fake credentials, and local HTTP providers. [Run it here](development.md#compression-comparison).
+The upstream [`tests/smoke_compression.py`](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/tests/smoke_compression.py)
+runs real Headroom **0.37.0** with temporary homes, fake credentials, and local HTTP
+providers. See its [development instructions](https://github.com/ruarfff/headroom-kit/blob/v0.1.0/docs/development.md).
 
 Before the change, two managed proxies reported **375 requests**, **196,808 saved
 tokens**, and **31,780,255 input tokens**. These mixed-workload counters are a

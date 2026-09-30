@@ -60,9 +60,9 @@ in
       description = "Wrappers to install. The headroom and headroom-kit commands are always included.";
     };
     version = mkOption {
-      type = types.str;
-      default = "0.37.0";
-      description = "Exact stable release or latest; HEADROOM_VERSION takes precedence.";
+      type = types.nullOr types.str;
+      default = null;
+      description = "Removed: delete this option and HEADROOM_VERSION. The CLI release pins Headroom.";
     };
     startupTimeout = mkOption {
       type = types.ints.positive;
