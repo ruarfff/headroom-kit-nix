@@ -121,7 +121,7 @@ class PackageTest(unittest.TestCase):
                         check=False,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(result.stdout, "headroom-kit 0.1.2\nheadroom-ai 0.39.1\n")
+                    self.assertEqual(result.stdout, "headroom-kit 0.1.3\nheadroom-ai 0.39.1\n")
 
                 version()
                 metadata = next((root / ".cache").rglob("headroom_ai-0.39.1.dist-info/METADATA"))
@@ -156,7 +156,7 @@ class PackageTest(unittest.TestCase):
                     return result.stdout if expected == 0 else result.stdout + result.stderr
 
                 self.assertEqual(
-                    run("headroom-kit", "--version"), "headroom-kit 0.1.2\nheadroom-ai 0.39.1\n"
+                    run("headroom-kit", "--version"), "headroom-kit 0.1.3\nheadroom-ai 0.39.1\n"
                 )
                 self.assertIn(f"/user/simple/headroom-ai/{filename}", requests)
                 self.assertTrue(all(path.startswith("/user/simple/") for path in requests))
@@ -164,7 +164,7 @@ class PackageTest(unittest.TestCase):
                 env["UV_OFFLINE"] = "1"
                 for _ in range(3):
                     self.assertEqual(
-                        run("headroom-kit", "--version"), "headroom-kit 0.1.2\nheadroom-ai 0.39.1\n"
+                        run("headroom-kit", "--version"), "headroom-kit 0.1.3\nheadroom-ai 0.39.1\n"
                     )
                 self.assertEqual(run("headroom"), "headroom fixture\n")
                 self.assertIn("copilot-auth", run("headroom-kit", "--help"))
@@ -231,6 +231,7 @@ class PackageTest(unittest.TestCase):
 
         released_wheel, released_defaults = wrapper("HEADROOM_KIT_PACKAGE")
         local_wheel, local_defaults = wrapper("HEADROOM_KIT_APP_PACKAGE")
+        _, configured_defaults = wrapper("HEADROOM_KIT_CONFIGURED_PACKAGE")
         self.assertNotEqual(local_wheel, released_wheel)
         self.assertEqual(local_wheel.name, released_wheel.name)
         self.assertEqual(local_wheel.read_bytes(), released_wheel.read_bytes())
@@ -238,6 +239,9 @@ class PackageTest(unittest.TestCase):
         self.assertNotIn("copilotAppDataDir", released_defaults)
         self.assertEqual(local_defaults["copilotAppPath"], "/Applications/GitHub Copilot.app")
         self.assertEqual(local_defaults["copilotAppDataDir"], "/test/Copilot Headroom")
+        self.assertIs(released_defaults["openDashboard"], True)
+        self.assertIs(local_defaults["openDashboard"], True)
+        self.assertIs(configured_defaults["openDashboard"], False)
 
 
 if __name__ == "__main__":

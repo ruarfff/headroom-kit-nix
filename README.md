@@ -6,7 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
-This flake uses the released [Headroom Kit CLI v0.1.2](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.2).
+This flake uses the released [Headroom Kit CLI v0.1.3](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.3).
 Normal launches keep their settings. Kit does not install agents or system services.
 
 ```mermaid
@@ -28,6 +28,10 @@ Nix fetches and verifies the CLI wheel. The first launch installs it and Headroo
 launches use that environment directly, without uv resolution or index access.
 [Version and index policy](docs/configuration.md#versions-and-package-indexes).
 For Copilot, [authorize Headroom](docs/usage.md#copilot-cli) first.
+
+Agent launches open the dashboard on supported desktops. Set
+`programs.headroom-kit.openDashboard = false` or `HEADROOM_OPEN_DASHBOARD=0`
+to disable it. SSH and headless Linux sessions skip browser launch.
 
 ## Install in your Nix configuration
 

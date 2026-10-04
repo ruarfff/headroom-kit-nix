@@ -22,7 +22,12 @@ let
     };
   packages = import ./packages.nix {
     inherit pkgs;
-    inherit (cfg) version cliWheel startupTimeout;
+    inherit (cfg)
+      version
+      cliWheel
+      startupTimeout
+      openDashboard
+      ;
     codexExecutable = cfg.codex.executable;
     codexPort = cfg.codex.port;
     codexAppPath = cfg.codex.appPath;
@@ -75,6 +80,11 @@ in
     startupTimeout = mkOption {
       type = types.ints.positive;
       default = 180;
+    };
+    openDashboard = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Open the selected Headroom dashboard when an agent starts and a desktop browser is available.";
     };
     codex = {
       executable = mkOption {

@@ -3,6 +3,7 @@
   version ? null,
   cliWheel ? null,
   startupTimeout ? 180,
+  openDashboard ? true,
   codexExecutable ? "codex",
   codexPort ? 8788,
   codexAppPath ? null,
@@ -50,6 +51,7 @@ let
       {
         inherit
           startupTimeout
+          openDashboard
           codexExecutable
           codexPort
           codexAppPath
@@ -133,6 +135,7 @@ assert lib.assertMsg (builtins.elem vscodeChannel [
 assert lib.assertMsg (
   builtins.isInt startupTimeout && startupTimeout > 0
 ) "Invalid startup timeout";
+assert lib.assertMsg (builtins.isBool openDashboard) "openDashboard must be a boolean";
 packages
 // {
   headroom-kit-control = packages.headroom-kit;
