@@ -4,7 +4,7 @@ A build proves packaging, not model routing or compression. The detailed runtime
 results below are historical: they cover the bundled implementation before the
 migration to Headroom Kit CLI v0.1.0. They do not validate the new package boundary.
 The CLI now owns routing tests and runtime validation; see its
-[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.2/docs/validation.md).
+[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.3/docs/validation.md).
 Current Nix checks are described in [development](development.md).
 
 ## CLI migration checks
@@ -24,6 +24,15 @@ The default `copilot-app-headroom --help` command passes. Package tests also
 check custom app options and help without creating an app profile. Profile
 isolation and live model routing remain upstream CLI coverage; these package
 checks do not launch the GUI.
+
+## CLI 0.1.3 checks
+
+On Apple Silicon macOS, all 15 Nix integration/release tests and the native
+flake check pass. All three target systems evaluate. The real dependency
+environment reports `headroom-kit 0.1.3` and `headroom-ai 0.39.1`.
+Package checks verify that dashboard opening defaults to `true`, a Home Manager
+override emits `false`, and invalid option types are rejected. Browser launch
+behaviour remains upstream CLI coverage; these checks do not open a browser.
 
 ## Launcher startup
 

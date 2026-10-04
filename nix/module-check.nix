@@ -17,6 +17,7 @@ let
     }).config.home.packages;
   enabled = evaluate {
     enable = true;
+    openDashboard = false;
     cliWheel = import ./cli-wheel.nix { inherit pkgs; };
     wrappers = [
       "codex-headroom"
@@ -52,6 +53,13 @@ assert
     builtins.deepSeq (evaluate {
       enable = true;
       cliWheel = "/invalid-wheel.whl";
+    }) true
+  )).success;
+assert
+  !(builtins.tryEval (
+    builtins.deepSeq (evaluate {
+      enable = true;
+      openDashboard = "yes";
     }) true
   )).success;
 assert

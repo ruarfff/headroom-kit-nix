@@ -52,7 +52,7 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-This flake pins **Headroom Kit CLI 0.1.2** with the release wheel's SHA-256.
+This flake pins **Headroom Kit CLI 0.1.3** with the release wheel's SHA-256.
 The CLI requires **Headroom 0.39.1**. Check both installed versions:
 
 ```sh
@@ -99,7 +99,7 @@ Headroom dependency pin:
 ```nix
 programs.headroom-kit = {
   enable = true;
-  cliWheel = /absolute/path/to/headroom_kit-0.1.2-py3-none-any.whl;
+  cliWheel = /absolute/path/to/headroom_kit-0.1.3-py3-none-any.whl;
   wrappers = [ "copilot-app-headroom" ];
   copilot.port = 8792;
 };
@@ -107,7 +107,7 @@ programs.headroom-kit = {
 
 `lib.mkHeadroomKit` accepts the same `cliWheel` argument. Keep the wheel's original
 filename. For a Nix build output, pass the file within it, for example
-`"${wheelBuild}/headroom_kit-0.1.2-py3-none-any.whl"`. Nix stores the wheel and the
+`"${wheelBuild}/headroom_kit-0.1.3-py3-none-any.whl"`. Nix stores the wheel and the
 launcher installs it into a separate cached environment. The wheel's metadata
 still owns the Headroom dependency. Remove `cliWheel` to use the released CLI.
 
@@ -124,6 +124,7 @@ Home Manager paths are under `programs.headroom-kit`. The last column is
 | Environment variable | Default | Home Manager | Package argument |
 | --- | --- | --- | --- |
 | `HEADROOM_STARTUP_TIMEOUT` | 180 seconds | `startupTimeout` | `startupTimeout` |
+| `HEADROOM_OPEN_DASHBOARD` | `true` | `openDashboard` | `openDashboard` |
 | `HEADROOM_CODEX_EXECUTABLE` | `codex` | `codex.executable` | `codexExecutable` |
 | `HEADROOM_CODEX_PORT` | 8788 | `codex.port` | `codexPort` |
 | `HEADROOM_CODEX_APP_PATH` | Find installed Codex app | `codex.appPath` | `codexAppPath` |
@@ -145,8 +146,16 @@ Ports are 1–65535. Codex, Pi, and OpenCode each need a separate port. Copilot 
 the app, and the editor can share one with the same Headroom OAuth credential.
 The startup timeout begins after runtime resolution.
 
-The Copilot app options use CLI 0.1.2's separate-profile launcher. `cliWheel` has no
+The Copilot app options configure the CLI's separate-profile launcher. `cliWheel` has no
 environment override.
+
+`openDashboard` defaults to `true` in Home Manager and `lib.mkHeadroomKit`.
+Set it to `false` to stop opening the dashboard when an agent starts. For one
+launch, `HEADROOM_OPEN_DASHBOARD=0` overrides the Nix setting; `1` enables it.
+The CLI opens the selected proxy's dashboard after it is ready, including the
+shared Copilot dashboard when Pi or OpenCode explicitly selects `github-copilot`.
+SSH sessions, headless Linux sessions, and systems without a desktop opener skip
+browser launch. Browser failures do not stop the agent.
 
 Executables are names on `PATH` or single paths, not shell commands. Quote paths
 with spaces; the app path must be a macOS `.app` bundle. Unset a Kit variable to
@@ -173,7 +182,7 @@ See [validation](validation.md#openai-retrieval-exception).
 
 Overrides cover profiles, targets, compressor selection, lossless/Kompress,
 thresholds, read protection, tool search, deduplication, code-aware compression,
-and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.2/src/headroom_kit/proxy.py).
+and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.3/src/headroom_kit/proxy.py).
 `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
 also pass through; the default profile does not enable them.
 
