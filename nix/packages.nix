@@ -1,12 +1,15 @@
 {
   pkgs,
   version ? null,
+  cliWheel ? null,
   startupTimeout ? 180,
   codexExecutable ? "codex",
   codexPort ? 8788,
   codexAppPath ? null,
   copilotExecutable ? "copilot",
   copilotPort ? 8787,
+  copilotAppPath ? null,
+  copilotAppDataDir ? null,
   piExecutable ? "pi",
   piPort ? 8790,
   opencodeExecutable ? "opencode",
@@ -19,28 +22,53 @@
 }:
 let
   inherit (pkgs) lib;
-  wheel = import ./cli-wheel.nix { inherit pkgs; };
+  wheel =
+    if cliWheel == null then
+      import ./cli-wheel.nix { inherit pkgs; }
+    else
+      let
+        filename = builtins.unsafeDiscardStringContext (builtins.baseNameOf (toString cliWheel));
+        source =
+          if builtins.isPath cliWheel || builtins.hasContext (toString cliWheel) then
+            cliWheel
+          else
+            /. + cliWheel;
+        directory = pkgs.linkFarm "headroom-kit-development-wheel" [
+          {
+            name = filename;
+            path = source;
+          }
+        ];
+      in
+      assert lib.assertMsg (
+        builtins.match "headroom_kit-[^/]+\\.whl" filename != null
+      ) "cliWheel must point to a headroom_kit-*.whl file with its original wheel filename.";
+      "${directory}/${filename}";
   validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
   defaults = pkgs.writeText "headroom-kit-defaults.json" (
-    builtins.toJSON {
-      inherit
-        startupTimeout
-        codexExecutable
-        codexPort
-        codexAppPath
-        copilotExecutable
-        copilotPort
-        piExecutable
-        piPort
-        opencodeExecutable
-        opencodePort
-        vscodeChannel
-        vscodeExecutable
-        vscodePort
-        vscodeUserDataDir
-        vscodeExtensionsDir
-        ;
-    }
+    builtins.toJSON (
+      {
+        inherit
+          startupTimeout
+          codexExecutable
+          codexPort
+          codexAppPath
+          copilotExecutable
+          copilotPort
+          piExecutable
+          piPort
+          opencodeExecutable
+          opencodePort
+          vscodeChannel
+          vscodeExecutable
+          vscodePort
+          vscodeUserDataDir
+          vscodeExtensionsDir
+          ;
+      }
+      // lib.optionalAttrs (copilotAppPath != null) { inherit copilotAppPath; }
+      // lib.optionalAttrs (copilotAppDataDir != null) { inherit copilotAppDataDir; }
+    )
   );
   commands = [
     "headroom"
@@ -48,6 +76,7 @@ let
     "codex-headroom"
     "codex-app-headroom"
     "copilot-headroom"
+    "copilot-app-headroom"
     "pi-headroom"
     "opencode-headroom"
     "copilot-vscode-headroom"

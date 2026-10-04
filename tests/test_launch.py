@@ -97,6 +97,7 @@ class LauncherTest(unittest.TestCase):
             "codex-headroom": ["--help", "two words", "", "$(false)"],
             "codex-app-headroom": ["--help"],
             "copilot-headroom": ["--model", "auto"],
+            "copilot-app-headroom": ["--help"],
             "copilot-vscode-headroom": ["a folder"],
             "pi-headroom": ["--provider", "openai"],
             "opencode-headroom": ["run", "a prompt"],

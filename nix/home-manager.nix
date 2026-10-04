@@ -22,12 +22,14 @@ let
     };
   packages = import ./packages.nix {
     inherit pkgs;
-    inherit (cfg) version startupTimeout;
+    inherit (cfg) version cliWheel startupTimeout;
     codexExecutable = cfg.codex.executable;
     codexPort = cfg.codex.port;
     codexAppPath = cfg.codex.appPath;
     copilotExecutable = cfg.copilot.executable;
     copilotPort = cfg.copilot.port;
+    copilotAppPath = cfg.copilot.appPath;
+    copilotAppDataDir = cfg.copilot.appDataDir;
     piExecutable = cfg.pi.executable;
     piPort = cfg.pi.port;
     opencodeExecutable = cfg.opencode.executable;
@@ -48,6 +50,7 @@ in
           "codex-headroom"
           "codex-app-headroom"
           "copilot-headroom"
+          "copilot-app-headroom"
           "pi-headroom"
           "opencode-headroom"
           "copilot-vscode-headroom"
@@ -63,6 +66,11 @@ in
       type = types.nullOr types.str;
       default = null;
       description = "Removed: delete this option and HEADROOM_VERSION. The CLI release pins Headroom.";
+    };
+    cliWheel = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = "Development CLI wheel file with its original headroom_kit-*.whl filename; null uses the pinned release.";
     };
     startupTimeout = mkOption {
       type = types.ints.positive;
@@ -82,6 +90,8 @@ in
         default = "copilot";
       };
       port = port 8787;
+      appPath = optionalString "Installed GitHub Copilot macOS app path; null uses the CLI default.";
+      appDataDir = optionalString "Dedicated Headroom Copilot app profile, never the normal app profile; null uses the CLI default.";
     };
     pi = {
       executable = mkOption {

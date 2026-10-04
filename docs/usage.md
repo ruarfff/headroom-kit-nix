@@ -1,6 +1,6 @@
 # Usage and troubleshooting
 
-The Nix commands use [Headroom Kit CLI v0.1.1](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.1).
+The Nix commands use [Headroom Kit CLI v0.1.2](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.2).
 Existing wrapper names remain available. For example, `codex-headroom resume --last`
 calls `headroom-kit run codex -- resume --last` with your Nix defaults.
 Read [migration](#migration-and-rollback) before upgrading from the bundled runtime.
@@ -135,6 +135,26 @@ never normal editor data. Escaping `User` or settings-file symlinks are rejected
 Pass one file or folder, with no extra editor flags. Remote hosts, SSH, containers,
 and WSL are unverified. See [Headroom's editor integration](https://docs.headroomlabs.ai/docs/vscode-copilot).
 
+## Copilot macOS app
+
+This command uses the released CLI 0.1.2 and an installed GitHub Copilot app. Authorize Headroom
+through `headroom-kit copilot-auth login`, quit GitHub Copilot, then run:
+
+```sh
+copilot-app-headroom
+```
+
+The CLI owns a dedicated app profile and configures its model providers to use
+the shared Copilot proxy. Sign in once in that profile when prompted. A normal
+app launch keeps its own profile and provider
+settings. Do not set `copilot.appDataDir` to the normal app data directory. Use
+`copilot.appPath` only when app discovery cannot find the installed bundle.
+
+The Nix wrapper only supplies configuration and translates the command to
+`headroom-kit run copilot-app --`. Profile setup and validation belong to the CLI.
+Copilot app 1.1.26 with database schema 156 is supported. An unknown schema stops
+the launch before provider settings change.
+
 ## Codex macOS app
 
 Sign in through the app, select its built-in OpenAI provider, then **quit it**:
@@ -167,7 +187,7 @@ Home Manager includes the control command. For individual packages, add
 | Route | Default port | Share when |
 | --- | --- | --- |
 | Codex CLI/app | 8788 | Same configuration |
-| Copilot CLI/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential and proxy settings |
+| Copilot CLI/app/editor and Pi/OpenCode `github-copilot` | 8787 | Same Headroom OAuth credential and proxy settings |
 | Pi | 8790 | Same configuration |
 | OpenCode | 8791 | Same configuration; each client has its own OpenCode server |
 

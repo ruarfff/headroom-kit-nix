@@ -34,7 +34,7 @@ Change `wrappers` to select clients; `headroom` and the control command stay inc
 
 ### Without the Kit module
 
-Select individual packages, or `kit.headroom-kit` for all eight commands:
+Select individual packages, or `kit.headroom-kit` for all commands:
 
 ```nix
 { inputs, pkgs, ... }:
@@ -52,7 +52,7 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-This flake pins **Headroom Kit CLI 0.1.1** with the release wheel's SHA-256.
+This flake pins **Headroom Kit CLI 0.1.2** with the release wheel's SHA-256.
 The CLI requires **Headroom 0.39.1**. Check both installed versions:
 
 ```sh
@@ -91,6 +91,31 @@ metadata also trigger setup. Complete older generations stay in place because
 running proxies may still use them. Do not remove those environments while in use.
 Resolver diagnostics remain hidden because they can contain authenticated URLs.
 
+### Development CLI wheel
+
+Use `cliWheel` to test an unreleased CLI without changing the release URL or the
+Headroom dependency pin:
+
+```nix
+programs.headroom-kit = {
+  enable = true;
+  cliWheel = /absolute/path/to/headroom_kit-0.1.2-py3-none-any.whl;
+  wrappers = [ "copilot-app-headroom" ];
+  copilot.port = 8792;
+};
+```
+
+`lib.mkHeadroomKit` accepts the same `cliWheel` argument. Keep the wheel's original
+filename. For a Nix build output, pass the file within it, for example
+`"${wheelBuild}/headroom_kit-0.1.2-py3-none-any.whl"`. Nix stores the wheel and the
+launcher installs it into a separate cached environment. The wheel's metadata
+still owns the Headroom dependency. Remove `cliWheel` to use the released CLI.
+
+Different CLI builds have different proxy identities. Use a free Copilot port
+for the development wheel while a released CLI proxy is running; the example
+uses 8792. To keep installed wrappers on the release, create a separate package
+with `lib.mkHeadroomKit` and install only its `copilot-app-headroom` attribute.
+
 ## Options
 
 Home Manager paths are under `programs.headroom-kit`. The last column is
@@ -104,6 +129,8 @@ Home Manager paths are under `programs.headroom-kit`. The last column is
 | `HEADROOM_CODEX_APP_PATH` | Find installed Codex app | `codex.appPath` | `codexAppPath` |
 | `HEADROOM_COPILOT_EXECUTABLE` | `copilot` | `copilot.executable` | `copilotExecutable` |
 | `HEADROOM_COPILOT_PORT` | 8787 | `copilot.port` | `copilotPort` |
+| `HEADROOM_COPILOT_APP_PATH` | CLI app discovery | `copilot.appPath` | `copilotAppPath` |
+| `HEADROOM_COPILOT_APP_DATA_DIR` | CLI's dedicated Headroom profile | `copilot.appDataDir` | `copilotAppDataDir` |
 | `HEADROOM_PI_EXECUTABLE` | `pi` | `pi.executable` | `piExecutable` |
 | `HEADROOM_PI_PORT` | 8790 | `pi.port` | `piPort` |
 | `HEADROOM_OPENCODE_EXECUTABLE` | `opencode` | `opencode.executable` | `opencodeExecutable` |
@@ -114,9 +141,12 @@ Home Manager paths are under `programs.headroom-kit`. The last column is
 | `HEADROOM_VSCODE_USER_DATA_DIR` | [Isolated profile](usage.md#copilot-in-vs-code) | `vscode.userDataDir` | `vscodeUserDataDir` |
 | `HEADROOM_VSCODE_EXTENSIONS_DIR` | Existing channel extensions | `vscode.extensionsDir` | `vscodeExtensionsDir` |
 
-Ports are 1–65535. Codex, Pi, and OpenCode each need a separate port. Copilot CLI
-and the editor can share one with the same Headroom OAuth credential.
+Ports are 1–65535. Codex, Pi, and OpenCode each need a separate port. Copilot CLI,
+the app, and the editor can share one with the same Headroom OAuth credential.
 The startup timeout begins after runtime resolution.
+
+The Copilot app options use CLI 0.1.2's separate-profile launcher. `cliWheel` has no
+environment override.
 
 Executables are names on `PATH` or single paths, not shell commands. Quote paths
 with spaces; the app path must be a macOS `.app` bundle. Unset a Kit variable to
@@ -143,7 +173,7 @@ See [validation](validation.md#openai-retrieval-exception).
 
 Overrides cover profiles, targets, compressor selection, lossless/Kompress,
 thresholds, read protection, tool search, deduplication, code-aware compression,
-and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/src/headroom_kit/proxy.py).
+and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.2/src/headroom_kit/proxy.py).
 `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
 also pass through; the default profile does not enable them.
 

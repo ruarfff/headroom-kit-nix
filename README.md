@@ -6,7 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
-This flake uses the released [Headroom Kit CLI v0.1.1](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.1).
+This flake uses the released [Headroom Kit CLI v0.1.2](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.2).
 Normal launches keep their settings. Kit does not install agents or system services.
 
 ```mermaid
@@ -57,6 +57,7 @@ and NixOS/nix-darwin without Home Manager.
 | --- | --- |
 | `codex-headroom` | Existing Codex sign-in |
 | `copilot-headroom [--model <model-id>]` | [Headroom Copilot login](docs/usage.md#copilot-cli); supports native selection and `auto` |
+| `copilot-app-headroom` | Quit the app first; [isolated Copilot app profile](docs/usage.md#copilot-macos-app) |
 | `pi-headroom --provider <provider> --model <model-id>` | [Pi setup](docs/usage.md#pi) |
 | `opencode-headroom` | [OpenCode v2 setup](docs/usage.md#opencode-v2) |
 | `copilot-vscode-headroom .` | [Copilot setup](docs/usage.md#copilot-in-vs-code); isolated VS Code profile |
