@@ -17,7 +17,7 @@ nix develop "path:$PWD" --command pre-commit run anti-slop-python --all-files
 ```
 
 The version command installs the CLI environment on first use. It reports
-Headroom Kit 0.1.1 and Headroom 0.39.1 without starting a proxy. Transitive
+Headroom Kit 0.1.2 and Headroom 0.39.1 without starting a proxy. Transitive
 dependencies and native wheels are downloaded through uv, outside Nix's sandbox.
 Nix verifies the CLI wheel during the package build.
 
@@ -38,10 +38,22 @@ The flake checks:
 
 The local dependency fixture does not test real Headroom imports, native libraries,
 proxy startup, or model routing. Use the upstream
-[runtime checks](https://github.com/ruarfff/headroom-kit/blob/v0.1.1/docs/development.md)
+[runtime checks](https://github.com/ruarfff/headroom-kit/blob/v0.1.2/docs/development.md)
 for that coverage. Live provider requests need explicit authorization.
 
 ## Update the CLI
+
+For local development, build the wheel in the upstream CLI checkout and pass its
+path as `cliWheel` to `lib.mkHeadroomKit` or the Home Manager module. Keep its
+original `headroom_kit-*.whl` filename. This tests the Nix launcher against the
+unreleased CLI without editing `nix/cli-wheel.nix`. See
+[development wheel configuration](configuration.md#development-cli-wheel).
+
+`copilot-app-headroom` translates to `headroom-kit run copilot-app --`. The CLI
+owns the isolated app profile and provider configuration. Nix tests cover command
+translation, wheel selection, optional configuration fields, and the released
+CLI's help without starting an app or proxy. Test profile isolation and model
+routing in the upstream CLI before using a development wheel with the real app.
 
 Change the release URL and SHA-256 in `nix/cli-wheel.nix`. Check the new release's
 configuration keys, agent names, Python requirement, and Headroom dependency.

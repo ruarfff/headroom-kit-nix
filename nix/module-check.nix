@@ -17,9 +17,11 @@ let
     }).config.home.packages;
   enabled = evaluate {
     enable = true;
+    cliWheel = import ./cli-wheel.nix { inherit pkgs; };
     wrappers = [
       "codex-headroom"
       "copilot-vscode-headroom"
+      "copilot-app-headroom"
       "pi-headroom"
       "opencode-headroom"
       "codex-headroom"
@@ -46,11 +48,19 @@ assert
     }) true
   )).success;
 assert
+  !(builtins.tryEval (
+    builtins.deepSeq (evaluate {
+      enable = true;
+      cliWheel = "/invalid-wheel.whl";
+    }) true
+  )).success;
+assert
   builtins.map (p: p.name) enabled == [
     "headroom"
     "headroom-kit"
     "codex-headroom"
     "copilot-vscode-headroom"
+    "copilot-app-headroom"
     "pi-headroom"
     "opencode-headroom"
   ];

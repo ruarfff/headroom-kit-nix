@@ -3,6 +3,7 @@
 import functools
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -120,7 +121,7 @@ class PackageTest(unittest.TestCase):
                         check=False,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(result.stdout, "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n")
+                    self.assertEqual(result.stdout, "headroom-kit 0.1.2\nheadroom-ai 0.39.1\n")
 
                 version()
                 metadata = next((root / ".cache").rglob("headroom_ai-0.39.1.dist-info/METADATA"))
@@ -155,7 +156,7 @@ class PackageTest(unittest.TestCase):
                     return result.stdout if expected == 0 else result.stdout + result.stderr
 
                 self.assertEqual(
-                    run("headroom-kit", "--version"), "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n"
+                    run("headroom-kit", "--version"), "headroom-kit 0.1.2\nheadroom-ai 0.39.1\n"
                 )
                 self.assertIn(f"/user/simple/headroom-ai/{filename}", requests)
                 self.assertTrue(all(path.startswith("/user/simple/") for path in requests))
@@ -163,11 +164,17 @@ class PackageTest(unittest.TestCase):
                 env["UV_OFFLINE"] = "1"
                 for _ in range(3):
                     self.assertEqual(
-                        run("headroom-kit", "--version"), "headroom-kit 0.1.1\nheadroom-ai 0.39.1\n"
+                        run("headroom-kit", "--version"), "headroom-kit 0.1.2\nheadroom-ai 0.39.1\n"
                     )
                 self.assertEqual(run("headroom"), "headroom fixture\n")
                 self.assertIn("copilot-auth", run("headroom-kit", "--help"))
                 self.assertIn("Agents:", run("headroom-kit", "run", "--help"))
+                self.assertIn(
+                    "Usage: headroom-kit run copilot-app --",
+                    run("copilot-app-headroom", "--help"),
+                )
+                self.assertFalse((root / "Library/Application Support").exists())
+                self.assertFalse((root / ".local/share/headroom-kit/copilot-app").exists())
                 self.assertEqual(
                     json.loads(run("codex-headroom", "--help", "two words", "")),
                     ["--help", "two words", ""],
@@ -179,6 +186,12 @@ class PackageTest(unittest.TestCase):
                 config.write_text(json.dumps({"codexExecutable": str(agent)}))
                 del env["HEADROOM_CODEX_EXECUTABLE"]
                 original_package = package
+                package = Path(os.environ["HEADROOM_KIT_APP_PACKAGE"])
+                self.assertIn(
+                    "Usage: headroom-kit run copilot-app --",
+                    run("copilot-app-headroom", "--help"),
+                )
+                self.assertFalse((root / ".local/share/headroom-kit/copilot-app").exists())
                 package = Path(os.environ["HEADROOM_KIT_CONFIGURED_PACKAGE"])
                 self.assertEqual(run("codex-headroom", "--help"), "")
                 self.assertEqual(run("headroom-kit", "run", "codex", "--", "--help"), "")
@@ -207,6 +220,24 @@ class PackageTest(unittest.TestCase):
                 "opencode-plugin/package.json",
             ):
                 self.assertIn(f"headroom_kit/resources/{name}", wheel.namelist())
+
+    def test_development_wheel_and_app_defaults_reach_the_launcher(self) -> None:
+        def wrapper(package: str) -> tuple[Path, dict[str, object]]:
+            script = Path(os.environ[package]) / "bin/copilot-app-headroom"
+            argv = shlex.split(script.read_text())
+            wheel = next(Path(arg) for arg in argv if arg.endswith(".whl"))
+            defaults = next(Path(arg) for arg in argv if arg.endswith("-defaults.json"))
+            return wheel, json.loads(defaults.read_text())
+
+        released_wheel, released_defaults = wrapper("HEADROOM_KIT_PACKAGE")
+        local_wheel, local_defaults = wrapper("HEADROOM_KIT_APP_PACKAGE")
+        self.assertNotEqual(local_wheel, released_wheel)
+        self.assertEqual(local_wheel.name, released_wheel.name)
+        self.assertEqual(local_wheel.read_bytes(), released_wheel.read_bytes())
+        self.assertNotIn("copilotAppPath", released_defaults)
+        self.assertNotIn("copilotAppDataDir", released_defaults)
+        self.assertEqual(local_defaults["copilotAppPath"], "/Applications/GitHub Copilot.app")
+        self.assertEqual(local_defaults["copilotAppDataDir"], "/test/Copilot Headroom")
 
 
 if __name__ == "__main__":

@@ -65,6 +65,13 @@
                 HEADROOM_KIT_WHEEL = import ./nix/cli-wheel.nix { inherit pkgs; };
                 HEADROOM_KIT_PACKAGE = self.packages.${system}.headroom-kit;
                 HEADROOM_KIT_CONFIGURED_PACKAGE = self.checks.${system}.home-manager-module;
+                HEADROOM_KIT_APP_PACKAGE =
+                  (self.lib.mkHeadroomKit {
+                    inherit pkgs;
+                    cliWheel = import ./nix/cli-wheel.nix { inherit pkgs; };
+                    copilotAppPath = "/Applications/GitHub Copilot.app";
+                    copilotAppDataDir = "/test/Copilot Headroom";
+                  }).copilot-app-headroom;
               }
               ''
                 cp -r ${./libexec} libexec
