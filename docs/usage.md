@@ -1,6 +1,6 @@
 # Usage and troubleshooting
 
-The Nix commands use [Headroom Kit CLI v0.1.3](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.3).
+The Nix commands use [Headroom Kit CLI v0.1.5](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.5).
 Existing wrapper names remain available. For example, `codex-headroom resume --last`
 calls `headroom-kit run codex -- resume --last` with your Nix defaults.
 Read [migration](#migration-and-rollback) before upgrading from the bundled runtime.
@@ -137,7 +137,7 @@ and WSL are unverified. See [Headroom's editor integration](https://docs.headroo
 
 ## Copilot macOS app
 
-This command uses the released CLI 0.1.3 and an installed GitHub Copilot app. Authorize Headroom
+This command uses the released CLI 0.1.5 and an installed GitHub Copilot app. Authorize Headroom
 through `headroom-kit copilot-auth login`, quit GitHub Copilot, then run:
 
 ```sh
@@ -152,8 +152,10 @@ settings. Do not set `copilot.appDataDir` to the normal app data directory. Use
 
 The Nix wrapper only supplies configuration and translates the command to
 `headroom-kit run copilot-app --`. Profile setup and validation belong to the CLI.
-Copilot app 1.1.26 with database schema 156 is supported. An unknown schema stops
-the launch before provider settings change.
+Copilot app 1.1.26 (schema 156) and 1.1.27 (schema 166) are supported. An unknown
+schema or changed managed-table columns stop the launch before provider settings
+change. The CLI checks only the profile files it manages, so session files and
+shared skills can link outside the profile.
 
 ## Codex macOS app
 
