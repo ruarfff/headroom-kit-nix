@@ -1,6 +1,6 @@
 # Usage and troubleshooting
 
-The Nix commands use [Headroom Kit CLI v0.1.5](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.5).
+The Nix commands use [Headroom Kit CLI v0.1.6](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.6).
 Existing wrapper names remain available. For example, `codex-headroom resume --last`
 calls `headroom-kit run codex -- resume --last` with your Nix defaults.
 Read [migration](#migration-and-rollback) before upgrading from the bundled runtime.
@@ -137,7 +137,7 @@ and WSL are unverified. See [Headroom's editor integration](https://docs.headroo
 
 ## Copilot macOS app
 
-This command uses the released CLI 0.1.5 and an installed GitHub Copilot app. Authorize Headroom
+This command uses the released CLI 0.1.6 and an installed GitHub Copilot app. Authorize Headroom
 through `headroom-kit copilot-auth login`, quit GitHub Copilot, then run:
 
 ```sh
