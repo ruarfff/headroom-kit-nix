@@ -52,8 +52,8 @@ Use `home.packages` with the same list in Home Manager.
 
 ## Versions and package indexes
 
-This flake pins **Headroom Kit CLI 0.1.6** with the release wheel's SHA-256.
-The CLI requires **Headroom 0.39.1**. Check both installed versions:
+This flake pins **Headroom Kit CLI 0.1.7** with the release wheel's SHA-256.
+The CLI requires **Headroom 0.41.0**. Check both installed versions:
 
 ```sh
 headroom-kit --version
@@ -99,7 +99,7 @@ Headroom dependency pin:
 ```nix
 programs.headroom-kit = {
   enable = true;
-  cliWheel = /absolute/path/to/headroom_kit-0.1.6-py3-none-any.whl;
+  cliWheel = /absolute/path/to/headroom_kit-0.1.7-py3-none-any.whl;
   wrappers = [ "copilot-app-headroom" ];
   copilot.port = 8792;
 };
@@ -107,7 +107,7 @@ programs.headroom-kit = {
 
 `lib.mkHeadroomKit` accepts the same `cliWheel` argument. Keep the wheel's original
 filename. For a Nix build output, pass the file within it, for example
-`"${wheelBuild}/headroom_kit-0.1.6-py3-none-any.whl"`. Nix stores the wheel and the
+`"${wheelBuild}/headroom_kit-0.1.7-py3-none-any.whl"`. Nix stores the wheel and the
 launcher installs it into a separate cached environment. The wheel's metadata
 still owns the Headroom dependency. Remove `cliWheel` to use the released CLI.
 
@@ -182,7 +182,7 @@ See [validation](validation.md#openai-retrieval-exception).
 
 Overrides cover profiles, targets, compressor selection, lossless/Kompress,
 thresholds, read protection, tool search, deduplication, code-aware compression,
-and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.6/src/headroom_kit/proxy.py).
+and CCR. See the [CLI allowlist](https://github.com/ruarfff/headroom-kit/blob/v0.1.7/src/headroom_kit/proxy.py).
 `HEADROOM_OUTPUT_SHAPER`, `HEADROOM_EFFORT_ROUTER`, and `HEADROOM_VERBOSITY_AUTOTUNE`
 also pass through; the default profile does not enable them.
 

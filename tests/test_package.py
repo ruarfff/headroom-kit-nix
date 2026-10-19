@@ -18,12 +18,12 @@ from pathlib import Path
 
 
 def make_dependency(index: Path) -> str:
-    filename = "headroom_ai-0.39.1-py3-none-any.whl"
-    info = "headroom_ai-0.39.1.dist-info"
+    filename = "headroom_ai-0.41.0-py3-none-any.whl"
+    info = "headroom_ai-0.41.0.dist-info"
     with zipfile.ZipFile(index / filename, "w") as wheel:
         wheel.writestr(
             f"{info}/METADATA",
-            "Metadata-Version: 2.3\nName: headroom-ai\nVersion: 0.39.1\n"
+            "Metadata-Version: 2.3\nName: headroom-ai\nVersion: 0.41.0\n"
             "Provides-Extra: proxy\nProvides-Extra: code\n",
         )
         wheel.writestr(
@@ -121,10 +121,10 @@ class PackageTest(unittest.TestCase):
                         check=False,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(result.stdout, "headroom-kit 0.1.6\nheadroom-ai 0.39.1\n")
+                    self.assertEqual(result.stdout, "headroom-kit 0.1.7\nheadroom-ai 0.41.0\n")
 
                 version()
-                metadata = next((root / ".cache").rglob("headroom_ai-0.39.1.dist-info/METADATA"))
+                metadata = next((root / ".cache").rglob("headroom_ai-0.41.0.dist-info/METADATA"))
                 metadata.unlink()
                 env["UV_OFFLINE"] = "1"
                 version()
@@ -156,7 +156,7 @@ class PackageTest(unittest.TestCase):
                     return result.stdout if expected == 0 else result.stdout + result.stderr
 
                 self.assertEqual(
-                    run("headroom-kit", "--version"), "headroom-kit 0.1.6\nheadroom-ai 0.39.1\n"
+                    run("headroom-kit", "--version"), "headroom-kit 0.1.7\nheadroom-ai 0.41.0\n"
                 )
                 self.assertIn(f"/user/simple/headroom-ai/{filename}", requests)
                 self.assertTrue(all(path.startswith("/user/simple/") for path in requests))
@@ -164,7 +164,7 @@ class PackageTest(unittest.TestCase):
                 env["UV_OFFLINE"] = "1"
                 for _ in range(3):
                     self.assertEqual(
-                        run("headroom-kit", "--version"), "headroom-kit 0.1.6\nheadroom-ai 0.39.1\n"
+                        run("headroom-kit", "--version"), "headroom-kit 0.1.7\nheadroom-ai 0.41.0\n"
                     )
                 self.assertEqual(run("headroom"), "headroom fixture\n")
                 self.assertIn("copilot-auth", run("headroom-kit", "--help"))
