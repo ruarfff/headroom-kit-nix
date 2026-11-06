@@ -4,7 +4,7 @@ A build proves packaging, not model routing or compression. The detailed runtime
 results below are historical: they cover the bundled implementation before the
 migration to Headroom Kit CLI v0.1.0. They do not validate the new package boundary.
 The CLI now owns routing tests and runtime validation; see its
-[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.8/docs/validation.md).
+[validation record](https://github.com/ruarfff/headroom-kit/blob/v0.1.9/docs/validation.md).
 Current Nix checks are described in [development](development.md).
 
 ## CLI migration checks
