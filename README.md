@@ -6,7 +6,7 @@
 
 Run your existing coding agents through a local
 [Headroom](https://github.com/headroomlabs-ai/headroom) proxy using Nix.
-This flake uses the released [Headroom Kit CLI v0.1.7](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.7).
+This flake uses the released [Headroom Kit CLI v0.1.8](https://github.com/ruarfff/headroom-kit/releases/tag/v0.1.8).
 Normal launches keep their settings. Kit does not install agents or system services.
 
 ```mermaid
